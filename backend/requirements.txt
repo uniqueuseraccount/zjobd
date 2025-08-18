@@ -1,0 +1,7 @@
+# FILE: requirements.txt
+
+Flask
+Flask-Cors
+mysql-connector-python
+pytz
+watchdog
