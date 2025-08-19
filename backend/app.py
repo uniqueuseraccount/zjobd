@@ -104,41 +104,43 @@ def get_trip_groups():
 # FILE: backend/app.py
 		# ... (previous code in the file) ...
 		
+# In backend/app.py
+
 @app.route('/api/trip-groups/<group_id>', methods=['GET'])
 def get_trip_group_detail(group_id):
-	db_manager = DatabaseManager(DB_CONFIG)
-	try:
-		logs = db_manager.get_logs_for_trip_group(group_id)
-		gps_data_map = {}
-		log_data_map = {}
-		for log in logs:
-			log_id = log['log_id']
-			# --- FIX: Capture and include the 'columns' for each log ---
-			data, columns, _, _ = db_manager.get_data_for_log(log_id)
-			log_data_map[log_id] = {
-				"data": data,
-				"columns": columns
-			}
-			# --- END FIX ---
-			
-			# Find latitude and longitude column names dynamically
-			lat_col = next((col for col in columns if 'latitude' in col.lower()), None)
-			lon_col = next((col for col in columns if 'longitude' in col.lower()), None)
+    db_manager = DatabaseManager(DB_CONFIG)
+    try:
+        logs = db_manager.get_logs_for_trip_group(group_id)
+        
+        all_log_data = {}
+        all_columns_map = {}
+        all_pids = set()
 
-			if lat_col and lon_col:
-				gps_data_map[log_id] = [
-					d for d in data if d.get(lat_col) is not None and d.get(lon_col) is not None
-				]
-			else:
-				gps_data_map[log_id] = []
+        for log in logs:
+            log_id = log['log_id']
+            # Fetch the data for the current log
+            data, columns, _, normalized_names = db_manager.get_data_for_log(log_id)
+            
+            # Store the data and columns
+            all_log_data[log_id] = data
+            all_columns_map[log_id] = columns
+            
+            # Add the PIDs from this log to our set of all PIDs
+            for pid in columns:
+                if pid not in ['data_id', 'timestamp', 'operating_state']:
+                    all_pids.add(normalized_names.get(pid, pid)) # Use the original, non-sanitized name
 
-
-		return jsonify({"logs": logs, "gps_data": gps_data_map, "log_data": log_data_map})
-	except Exception as e:
-		app.logger.error(f"Error fetching data for trip group {group_id}: {e}", exc_info=True)
-		return jsonify({"error": "Could not fetch trip group data"}), 500
-	finally:
-		db_manager.close()
+        return jsonify({
+            "logs": logs, 
+            "all_data": all_log_data,
+            "all_columns": all_columns_map,
+            "combined_pids": sorted(list(all_pids)) # Return a sorted list of unique PIDs
+        })
+    except Exception as e:
+        app.logger.error(f"Error fetching data for trip group {group_id}: {e}", exc_info=True)
+        return jsonify({"error": "Could not fetch trip group data"}), 500
+    finally:
+        db_manager.close()
 
 @app.route('/api/trip-groups/summary', methods=['GET'])
 def get_trip_group_summary():
