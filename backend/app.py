@@ -1,4 +1,10 @@
 # FILE: backend/app.py
+#
+# --- VERSION 1.9.4-ALPHA ---
+# - FIXED: Corrected ambiguous column name `trip_duration_seconds` in the SQL 
+#   query within the get_log_data function.
+# - INFO: This version is a consolidated and corrected version of the app.py file.
+# -----------------------------
 
 import os
 import time
@@ -69,7 +75,7 @@ def get_log_data(log_id):
 	db_manager = DatabaseManager(DB_CONFIG)
 	try:
 		log_data, columns, statistics, _ = db_manager.get_data_for_log(log_id)
-		trip_info = db_manager.fetch_one("SELECT file_name, trip_group_id, distance_miles, trip_duration_seconds FROM log_index li LEFT JOIN trips t ON li.log_id = t.log_id WHERE li.log_id = %s", (log_id,))
+		trip_info = db_manager.fetch_one("SELECT li.file_name, t.trip_group_id, t.distance_miles, li.trip_duration_seconds FROM log_index li LEFT JOIN trips t ON li.log_id = t.log_id WHERE li.log_id = %s", (log_id,))
 		group_logs = []
 		if trip_info and trip_info.get('trip_group_id'):
 			group_logs = db_manager.get_logs_for_trip_group(trip_info['trip_group_id'])
@@ -95,6 +101,9 @@ def get_trip_groups():
 	finally:
 		db_manager.close()
 
+# FILE: backend/app.py
+		# ... (previous code in the file) ...
+		
 @app.route('/api/trip-groups/<group_id>', methods=['GET'])
 def get_trip_group_detail(group_id):
 	db_manager = DatabaseManager(DB_CONFIG)
@@ -104,9 +113,25 @@ def get_trip_group_detail(group_id):
 		log_data_map = {}
 		for log in logs:
 			log_id = log['log_id']
-			data, _, _, _ = db_manager.get_data_for_log(log_id)
-			log_data_map[log_id] = data
-			gps_data_map[log_id] = [d for d in data if d.get('latitude') and d.get('longitude')]
+			# --- FIX: Capture and include the 'columns' for each log ---
+			data, columns, _, _ = db_manager.get_data_for_log(log_id)
+			log_data_map[log_id] = {
+				"data": data,
+				"columns": columns
+			}
+			# --- END FIX ---
+			
+			# Find latitude and longitude column names dynamically
+			lat_col = next((col for col in columns if 'latitude' in col.lower()), None)
+			lon_col = next((col for col in columns if 'longitude' in col.lower()), None)
+
+			if lat_col and lon_col:
+				gps_data_map[log_id] = [
+					d for d in data if d.get(lat_col) is not None and d.get(lon_col) is not None
+				]
+			else:
+				gps_data_map[log_id] = []
+
 
 		return jsonify({"logs": logs, "gps_data": gps_data_map, "log_data": log_data_map})
 	except Exception as e:
@@ -172,7 +197,7 @@ if __name__ == '__main__':
 		sys.exit(1)
 	finally:
 		startup_db_manager.close()
-
+	
 	watcher_thread = Thread(target=start_watcher, daemon=True)
 	watcher_thread.start()
 	
