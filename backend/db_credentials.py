@@ -5,7 +5,7 @@
 
 DB_CONFIG = {
     'host': 'localhost',
-    'user': 'root',
-    'password': '#R@fink66!',
+    'user': 'INSERT USER',
+    'password': 'INSERT PASSWORD',
     'database': 'obd2logs'
 }
