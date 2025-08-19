@@ -1,0 +1,65 @@
+OK I replaced the files as specified. I ran the group_trips.py script, and then started the backend and frontend servers. 
+
+The react front end seemed to come up ok, so I began with testing the base mechanism of the app to make sure nothing was broken, so i copied five new logs to process into the watched folder. Unfortunately this was the firs failure point. The following messages appeared for each file it attempted to process, and the logs were not incorporated into the log tables at all. 
+``` terminal log:
+2025-08-13 04:16:04,363 - INFO     - WATCHDOG: New file detected: /Users/markpotter/zjobd/logs/CSVLog_20250812_233324.csv
+2025-08-13 04:16:06,377 - INFO     - --- Processing file: CSVLog_20250812_233324.csv ---
+Exception in thread Thread-2:
+Traceback (most recent call last):
+  File "/usr/local/Cellar/python@3.12/3.12.11/Frameworks/Python.framework/Versions/3.12/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+	self.run()
+  File "/Users/markpotter/zjobd/backend/venv/lib/python3.12/site-packages/watchdog/observers/api.py", line 213, in run
+	self.dispatch_events(self.event_queue)
+  File "/Users/markpotter/zjobd/backend/venv/lib/python3.12/site-packages/watchdog/observers/api.py", line 391, in dispatch_events
+	handler.dispatch(event)
+  File "/Users/markpotter/zjobd/backend/venv/lib/python3.12/site-packages/watchdog/events.py", line 217, in dispatch
+	getattr(self, f"on_{event.event_type}")(event)
+  File "/Users/markpotter/zjobd/backend/app.py", line 39, in on_created
+	process_log_file(event.src_path, db_manager)
+  File "/Users/markpotter/zjobd/backend/log2db/core.py", line 36, in process_log_file
+	if db_manager.is_file_processed(file_name):
+	   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'DatabaseManager' object has no attribute 'is_file_processed'
+```
+
+So from there I decided to check on the front end and make sure that was at least working on a basic level, but if I click into a log file, I get this in teh front end:
+```
+Uncaught runtime errors:
+ERROR
+Network Error
+handleError@http://localhost:3000/static/js/bundle.js:2001:14
+```
+And I see this in the terminal window for the front end, however I don't think its related to the above error:
+```
+Compiled with warnings.
+
+[eslint]
+src/LogDetail.js
+  Line 53:8:  'handleComparisonChange' is assigned a value but never used  no-unused-vars
+
+src/TripMap.js
+  Line 4:45:  'Tooltip' is defined but never used  no-unused-vars
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+```
+
+From there I went back and clicked into trip groups, and then into one of the two member groups, and again a bunch of runtime errors:
+```
+Uncaught runtime errors:
+ERROR
+can't access property "find", columns is undefined
+TripMap@http://localhost:3000/static/js/bundle.js:72159:18
+react-stack-bottom-frame@http://localhost:3000/static/js/bundle.js:54938:18
+renderWithHooks@http://localhost:3000/static/js/bundle.js:45148:38
+updateFunctionComponent@http://localhost:3000/static/js/bundle.js:46841:17
+beginWork@http://localhost:3000/static/js/bundle.js:47427:16
+runWithFiberInDEV@http://localhost:3000/static/js/bundle.js:42919:125
+performUnitOfWork@http://localhost:3000/static/js/bundle.js:49500:93
+workLoopSync@http://localhost:3000/static/js/bundle.js:49393:55
+renderRootSync@http://localhost:3000/static/js/bundle.js:49377:7
+performWorkOnRoot@http://localhost:3000/static/js/bundle.js:49141:42
+performWorkOnRootViaSchedulerTask@http://localhost:3000/static/js/bundle.js:50097:22
+performWorkUntilDeadline@http://localhost:3000/static/js/bundle.js:67177:54
+```
+

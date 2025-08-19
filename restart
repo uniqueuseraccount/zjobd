@@ -1,0 +1,2744 @@
+```
+This is the basic layout of the application.
+
+~/zjobd/ (root)
+~/zjobd/backend/venv/bin/activate (venv activation file)
+~/zjobd/backend/ (back end files)
+~/zjobd/frontend/ (front end \ react server files)
+~/zjobd/logs/ (trip csv log files - watched for new logs being dropped)
+
+I have included all of the files from the application inline below, wrapped like "### path/filename.extension ###" denoting the start of a file, and "### end filename.extension ###" denoting the end. I have used the "``` text ```" syntax to make my comments obvious throughout the document, whether the comments are inline within the source code of a file, or just generally in this document.
+
+I have been doing the development work on this application using Google's Gemini 2.5 Pro, as I have a Google apps for my domain account.
+
+Unfortunately It seems like either I have managed to do something to confuse or trip up Gemini, or I have reached some sort of maximum in terms of context window, or memory for previous interactions, or something because it appears to be unable to continue. If I look at its 'show thinking' feature, it is going in circles reevaluating the development strategy, requested features, user feedback, and doesn't reply with any text. I was frustrated with the slow speed of development, and I requested that Gemini minimize any flattery or telling me I did a good job with my diagnosis, or fluff about how great of an application we are about to take to the next level. Like - I don't need any of that shit. I want a working relationship, where I'm a project lead, or senior strategist, and the AI is acting as a senior level developer. I want the AI to provide the files as asked, I will do my part to copy and paste the revised code into the specified files, follow any directions as to the order to do certain things, or restart servers, or install new dependencies, and then I will run the application, test the working feactures, and provide feedback - noting anything that is broken, including any relevant troubleshooting messages or log files, and deploying any fixes quickly. Since this is an application that is being developed to serve a specific need : data mining years of csv log files, which I generate via an application on my iPhone, connected via bluetooth to an obd2 diagnostic interface, and as I drive it records to a csv log file, line by line, about every 3 seconds different sensor values from my Jeep, as well as integrating its own data from the phone - gps lat and long, gps speed, etc. I want to be able to use these logs to help with diagnosing problems with my Jeep, ideally being able to find patterns within the data that can be used to establish and visualize trends within the data, that makes outlier anomolies obvious. The challenge with this is that the log files are of real-world trips, on public streets, with a range of variables like time of day (traffic), construction (traffic, routing), towing a trailer, weather (rain, snow, excessive heat - can affect route, speeds, traffic, and sensor data like intake and coolant temperatures, running the heat or a/c will affect load levels on the engine), even my state of mind and a good or bad mood, or running late, or sad, can all affect my driving habits in such a way that it will affect the data recorded in a log, but, we have to infer certain situations, or at least the potential for certain situations from data like time of day, the type of road being driven from lat\long, look at the time of year, look at sections of trips from multiple log files, to establish a history on a specific road at a specific time, and then build trends off of that to determine whether a 10-20% higher load value for this specific road on this day is a potential anomaly situation, or, if we then search for other logs where on the same road they also show a 10-20% higher load value, if the load value is that mucha bove agerage cross teh entire log - then classify that log as a towing log, so that we can compare towing logs to towing logs. With classification of trips, an and running states, this should give the best chance of having apples to apples snapshots across multiple log files that we can then look at visual representation ofthe data to use in problem diagnosis to determine whether there may or may not be some sort of running issue - whether its worn spark plugs, or a manifold absolute pressure sensor, or an o2 sensor that isn't responding as quickly as it should resulting in reduced gas mileage due to running richer than it should, and a calculated load value that is trending higher than it should. These symptoms woulnd't necessarily be obvious to a driver, until the aging sensor creates a fault that turns on teh check engine light, but, might start manifesting with symptoms that are visible in the data under proper analysis. Figuring out the right way to assess the data I've got, so that classification is programatic, while bringing in ccontextual meta data as we go, either via third party api, or by looking at existing data in different ways, combined with not having a specific end state for the application in mind means I can't offer specificity in what my goals or overall requirements are. I cannot tell you (whether you're a person, or llm) I want to accomplish x y or z, here are my program requirements, here are the project limitations, timelines, goals, stretch goals, hardware requirements, software requirements, etc - now write me a program... Instead I'm learning as I go, plus adapting the project scope, strategy, and requirements on the fly. 
+
+So what I need from you, dear llm, is the following: 
+Act as a senior software developer, keeping communications professional, minimizing flattery or excessive explantions about why youre doing this or that. 
+I need you to provide code in the form of either a full file that can be downloaded, or code that can be copied and pasted into my editor. IF I am copying and pasting into files, I prefer you provide the full code for a file, but if you're only going to provide a line or block of code that needs to get added or edited, please anchor the new code within the file by either specifying line numbers, or for instance if we're adding a single line to a function, include the entire function in the code you send, or if its a new function, include code comments that reference the existing function or codeblocks that come before and after the new code, so that placement within the existing file is obvious. Please make sure that the new code is properly formatted in terms of indentation, or other gotchas that can cause issues when you're sending a block or line of code rather than a full file. 
+
+Youre going to see a half dozen files that have two versions in this document. After I typed most of this I decided to try the edits that Gemini gave me, to see if they actually fixed my issues. However I think these edits ended up being version regressions - however Gemini didn't bother to include version or changes notes in the files, so I don't know. 
+
+What I do know is that the front end is broken - the trip group details crashes the app. The maps that do show up in log details don't have a background, and theres no coloring. The vertical axis labels in the graph are dynamic to the data, but the labels and colors dont update. The color of the data points \ lines doesn't match the drop down boxes like its supposed to. 
+``` 
+
+### backend/requirements.txt
+# FILE: requirements.txt
+
+Flask
+Flask-Cors
+mysql-connector-python
+pytz
+watchdog
+
+### end requirements.txt ###
+
+### backend/app.py ###
+# FILE: backend/app.py
+#
+# --- VERSION 1.9.4-ALPHA ---
+# - FIXED: Corrected ambiguous column name `trip_duration_seconds` in the SQL 
+#   query within the get_log_data function.
+# - INFO: This version is a consolidated and corrected version of the app.py file.
+# -----------------------------
+
+import os
+import time
+import logging
+import sys
+from threading import Thread
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+
+try:
+	from db_credentials import DB_CONFIG
+	from log2db.utils import setup_logging
+	from log2db.db_manager import DatabaseManager
+	from log2db.core import process_log_file
+	from group_trips import group_trips_logic
+except ImportError as e:
+	print(f"FATAL: A required file or module could not be imported: {e}", file=sys.stderr)
+	sys.exit(1)
+
+app = Flask(__name__)
+CORS(app)
+logger = logging.getLogger(__name__)
+
+class LogFileHandler(FileSystemEventHandler):
+	def __init__(self, db_manager_class, db_config):
+		self.db_manager_class = db_manager_class
+		self.db_config = db_config
+
+	def on_created(self, event):
+		if not event.is_directory and event.src_path.lower().endswith('.csv'):
+			app.logger.info(f"WATCHDOG: New file detected: {event.src_path}")
+			time.sleep(2)
+			db_manager = self.db_manager_class(self.db_config)
+			try:
+				process_log_file(event.src_path, db_manager)
+			finally:
+				db_manager.close()
+
+def start_watcher():
+	path_to_watch = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'logs'))
+	if not os.path.isdir(path_to_watch):
+		os.makedirs(path_to_watch)
+	app.logger.info(f"WATCHDOG: Starting file watcher on directory: {path_to_watch}")
+	event_handler = LogFileHandler(DatabaseManager, DB_CONFIG)
+	observer = Observer()
+	observer.schedule(event_handler, path_to_watch, recursive=False)
+	observer.start()
+	app.logger.info("WATCHDOG: File watcher started successfully.")
+	try:
+		while True: time.sleep(1)
+	except KeyboardInterrupt:
+		observer.stop()
+	observer.join()
+
+@app.route('/api/logs', methods=['GET'])
+def get_logs():
+	db_manager = DatabaseManager(DB_CONFIG)
+	try:
+		return jsonify(db_manager.get_all_logs())
+	finally:
+		db_manager.close()
+
+@app.route('/api/logs/<int:log_id>/data', methods=['GET'])
+def get_log_data(log_id):
+	db_manager = DatabaseManager(DB_CONFIG)
+	try:
+		log_data, columns, statistics, _ = db_manager.get_data_for_log(log_id)
+		trip_info = db_manager.fetch_one("SELECT li.file_name, t.trip_group_id, t.distance_miles, li.trip_duration_seconds FROM log_index li LEFT JOIN trips t ON li.log_id = t.log_id WHERE li.log_id = %s", (log_id,))
+		group_logs = []
+		if trip_info and trip_info.get('trip_group_id'):
+			group_logs = db_manager.get_logs_for_trip_group(trip_info['trip_group_id'])
+
+		return jsonify({
+			"data": log_data, 
+			"columns": columns, 
+			"statistics": statistics,
+			"trip_info": trip_info,
+			"group_logs": group_logs
+		})
+	except Exception as e:
+		app.logger.error(f"Error fetching data for log_id {log_id}: {e}", exc_info=True)
+		return jsonify({"error": "Could not fetch log data"}), 500
+	finally:
+		db_manager.close()
+
+@app.route('/api/trip-groups', methods=['GET'])
+def get_trip_groups():
+	db_manager = DatabaseManager(DB_CONFIG)
+	try:
+		return jsonify(db_manager.get_all_trip_groups())
+	finally:
+		db_manager.close()
+
+# FILE: backend/app.py
+		# ... (previous code in the file) ...
+		
+@app.route('/api/trip-groups/<group_id>', methods=['GET'])
+def get_trip_group_detail(group_id):
+	db_manager = DatabaseManager(DB_CONFIG)
+	try:
+		logs = db_manager.get_logs_for_trip_group(group_id)
+		gps_data_map = {}
+		log_data_map = {}
+		for log in logs:
+			log_id = log['log_id']
+			# --- FIX: Capture and include the 'columns' for each log ---
+			data, columns, _, _ = db_manager.get_data_for_log(log_id)
+			log_data_map[log_id] = {
+				"data": data,
+				"columns": columns
+			}
+			# --- END FIX ---
+			
+			# Find latitude and longitude column names dynamically
+			lat_col = next((col for col in columns if 'latitude' in col.lower()), None)
+			lon_col = next((col for col in columns if 'longitude' in col.lower()), None)
+
+			if lat_col and lon_col:
+				gps_data_map[log_id] = [
+					d for d in data if d.get(lat_col) is not None and d.get(lon_col) is not None
+				]
+			else:
+				gps_data_map[log_id] = []
+
+
+		return jsonify({"logs": logs, "gps_data": gps_data_map, "log_data": log_data_map})
+	except Exception as e:
+		app.logger.error(f"Error fetching data for trip group {group_id}: {e}", exc_info=True)
+		return jsonify({"error": "Could not fetch trip group data"}), 500
+	finally:
+		db_manager.close()
+
+@app.route('/api/trip-groups/summary', methods=['GET'])
+def get_trip_group_summary():
+	db_manager = DatabaseManager(DB_CONFIG)
+	try:
+		return jsonify(db_manager.get_trip_group_summary())
+	finally:
+		db_manager.close()
+
+@app.route('/api/trip-groups/preview', methods=['POST'])
+def preview_trip_groups():
+	data = request.get_json()
+	sensitivity = data.get('sensitivity', 3)
+	groups = group_trips_logic(preview_mode=True, sensitivity=sensitivity)
+	
+	group_counts = {"groups_of_2": 0, "groups_of_3_4": 0, "groups_of_5_plus": 0}
+	total_trips_in_groups = 0
+	for group in groups.values():
+		count = len(group)
+		if count == 2: group_counts["groups_of_2"] += 1
+		elif count in [3, 4]: group_counts["groups_of_3_4"] += 1
+		elif count >= 5: group_counts["groups_of_5_plus"] += 1
+		if count > 1: total_trips_in_groups += count
+
+	summary = {
+		"total_groups": len([g for g in groups.values() if len(g) > 1]),
+		"total_trips_grouped": total_trips_in_groups,
+		"group_counts": group_counts
+	}
+	return jsonify(summary)
+
+@app.route('/api/trips/apply-grouping', methods=['POST'])
+def apply_grouping():
+	data = request.get_json()
+	sensitivity = data.get('sensitivity', 3)
+	try:
+		group_trips_logic(preview_mode=False, sensitivity=sensitivity)
+		return jsonify({"success": True, "message": f"Successfully applied new grouping with sensitivity {sensitivity}."})
+	except Exception as e:
+		app.logger.error(f"Error applying trip grouping: {e}", exc_info=True)
+		return jsonify({"error": "Failed to apply grouping."}), 500
+
+if __name__ == '__main__':
+	if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+		logger = setup_logging() 
+		app.logger.handlers.extend(logger.handlers)
+		app.logger.setLevel(logging.INFO)
+	
+	app.logger.info("Verifying database schema before startup...")
+	startup_db_manager = DatabaseManager(DB_CONFIG)
+	try:
+		startup_db_manager.ensure_base_tables_exist()
+		app.logger.info("Database schema verified successfully.")
+	except Exception as e:
+		app.logger.critical(f"Could not verify or create database schema on startup: {e}")
+		sys.exit(1)
+	finally:
+		startup_db_manager.close()
+	
+	watcher_thread = Thread(target=start_watcher, daemon=True)
+	watcher_thread.start()
+	
+	app.logger.info("Starting Flask web server...")
+	app.run(host='0.0.0.0', port=5001, debug=True)
+	
+### end app.py ###	
+
+### backend/db_manager.py ###
+# FILE: backend/db_manager.py
+#
+# --- VERSION 1.9.8-ALPHA ---
+# - FIXED: Restored to the last known-good complete version of the file.
+# - All methods are fully implemented to prevent AttributeErrors.
+# -----------------------------
+
+import mysql.connector
+from mysql.connector import Error
+import logging
+import json
+
+from .utils import sanitize_column_name
+
+class DatabaseManager:
+	def __init__(self, db_config):
+		self.db_config = db_config
+		self.connection = None
+		try:
+			self.connection = mysql.connector.connect(**self.db_config)
+		except Error as e:
+			logging.critical(f"DATABASE CONNECTION FAILED: {e}")
+			raise
+
+	def execute_query(self, query, params=None):
+		cursor = self.connection.cursor()
+		try:
+			cursor.execute(query, params or ())
+			self.connection.commit()
+			return True
+		except Error as e:
+			logging.error(f"Error executing query: {e}")
+			self.connection.rollback()
+			return False
+		finally:
+			if cursor.with_rows:
+				try: cursor.fetchall()
+				except Error: pass
+			cursor.close()
+
+	def fetch_all(self, query, params=None):
+		cursor = self.connection.cursor(dictionary=True)
+		try:
+			cursor.execute(query, params or ())
+			return cursor.fetchall()
+		finally:
+			cursor.close()
+
+	def fetch_one(self, query, params=None):
+		cursor = self.connection.cursor(dictionary=True)
+		try:
+			cursor.execute(query, params or ())
+			return cursor.fetchone()
+		finally:
+			cursor.close()
+
+	def _column_exists(self, table_name, column_name):
+		query = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = %s"
+		cursor = self.connection.cursor()
+		cursor.execute(query, (self.db_config['database'], table_name, column_name))
+		exists = cursor.fetchone()[0] > 0
+		cursor.close()
+		return exists
+
+	def ensure_base_tables_exist(self):
+		logging.info("Ensuring base tables exist...")
+		log_index_query = """
+		CREATE TABLE IF NOT EXISTS log_index (
+			log_id INT AUTO_INCREMENT PRIMARY KEY,
+			file_name VARCHAR(255) UNIQUE NOT NULL,
+			start_timestamp BIGINT NOT NULL,
+			trip_duration_seconds FLOAT NOT NULL,
+			column_ids_json TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		) ENGINE=InnoDB;
+		"""
+		column_definitions_query = """
+		CREATE TABLE IF NOT EXISTS column_definitions (
+			column_id INT AUTO_INCREMENT PRIMARY KEY,
+			column_name VARCHAR(255) UNIQUE NOT NULL,
+			sanitized_name VARCHAR(255) UNIQUE NOT NULL,
+			mysql_data_type VARCHAR(50) NOT NULL
+		) ENGINE=InnoDB;
+		"""
+		log_data_query = """
+		CREATE TABLE IF NOT EXISTS log_data (
+			data_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+			log_id INT NOT NULL,
+			timestamp BIGINT NOT NULL,
+			INDEX (log_id),
+			FOREIGN KEY (log_id) REFERENCES log_index(log_id) ON DELETE CASCADE
+		) ENGINE=InnoDB;
+		"""
+		self.execute_query(log_index_query)
+		self.execute_query(column_definitions_query)
+		self.execute_query(log_data_query)
+
+		if not self._column_exists('log_data', 'operating_state'):
+			self.execute_query("ALTER TABLE log_data ADD COLUMN operating_state VARCHAR(50), ADD INDEX idx_operating_state (operating_state);")
+
+		trips_table_query = """
+		CREATE TABLE IF NOT EXISTS trips (
+			trip_id INT AUTO_INCREMENT PRIMARY KEY,
+			log_id INT NOT NULL UNIQUE,
+			start_lat DECIMAL(9, 6),
+			start_lon DECIMAL(9, 6),
+			end_lat DECIMAL(9, 6),
+			end_lon DECIMAL(9, 6),
+			trip_group_id VARCHAR(64),
+			distance_miles FLOAT,
+			notes TEXT,
+			tags JSON,
+			FOREIGN KEY (log_id) REFERENCES log_index(log_id) ON DELETE CASCADE
+		) ENGINE=InnoDB;
+		"""
+		self.execute_query(trips_table_query)
+
+		if not self._column_exists('trips', 'distance_miles'):
+			self.execute_query("ALTER TABLE trips ADD COLUMN distance_miles FLOAT;")
+		
+		logging.info("Base tables verification complete.")
+
+	def get_pid_statistics(self, sanitized_pids):
+		if not sanitized_pids:
+			return {}
+		stats = {}
+		for pid in sanitized_pids:
+			query = f"""
+				SELECT operating_state, AVG(`{pid}`) as mean, STDDEV(`{pid}`) as std_dev
+				FROM log_data WHERE operating_state IS NOT NULL AND `{pid}` IS NOT NULL
+				GROUP BY operating_state
+			"""
+			try:
+				results = self.fetch_all(query)
+				pid_stats = {row['operating_state']: {'mean': row['mean'], 'std_dev': row['std_dev']} for row in results}
+				stats[pid] = pid_stats
+			except Error as e:
+				logging.error(f"Could not calculate statistics for PID '{pid}': {e}")
+		return stats
+	
+	def get_all_defined_columns(self):
+		query = "SELECT column_id, column_name, sanitized_name, mysql_data_type FROM column_definitions"
+		return {row['column_name'].lower(): row for row in self.fetch_all(query)}
+
+	def add_new_column(self, column_name, data_type):
+		sanitized = sanitize_column_name(column_name)
+		logging.info(f"New column '{column_name}' detected. Adding to schema as '{sanitized}' with type {data_type}.")
+		insert_query = "INSERT INTO column_definitions (column_name, sanitized_name, mysql_data_type) VALUES (%s, %s, %s)"
+		if not self.execute_query(insert_query, (column_name, sanitized, data_type)):
+			return None
+		alter_query = f"ALTER TABLE log_data ADD COLUMN `{sanitized}` {data_type}"
+		if not self.execute_query(alter_query):
+			logging.error(f"Failed to add column '{sanitized}' to log_data table.")
+			return None
+		return self.fetch_one("SELECT * FROM column_definitions WHERE column_name = %s", (column_name,))
+
+	def is_file_processed(self, file_name):
+		return self.fetch_one("SELECT 1 FROM log_index WHERE file_name = %s", (file_name,)) is not None
+
+	def insert_log_index(self, file_name, start_timestamp, duration, column_ids_json):
+		query = "INSERT INTO log_index (file_name, start_timestamp, trip_duration_seconds, column_ids_json) VALUES (%s, %s, %s, %s)"
+		cursor = self.connection.cursor()
+		try:
+			cursor.execute(query, (file_name, start_timestamp, duration, column_ids_json))
+			self.connection.commit()
+			log_id = cursor.lastrowid
+			logging.info(f"Indexed file '{file_name}' with log_id: {log_id}.")
+			return log_id
+		except Error as e:
+			logging.error(f"Failed to index file {file_name}: {e}")
+			self.connection.rollback()
+			return None
+		finally:
+			cursor.close()
+
+	def insert_log_data_batch(self, log_id, data_rows, column_map):
+		if not data_rows: return
+		sanitized_headers = list(column_map.values())
+		cols_str = ", ".join([f"`{h}`" for h in sanitized_headers])
+		placeholders = ", ".join(["%s"] * len(sanitized_headers))
+		query = f"INSERT INTO log_data (log_id, timestamp, operating_state, {cols_str}) VALUES (%s, %s, %s, {placeholders})"
+		insert_tuples = []
+		for row in data_rows:
+			data_tuple = [log_id, row['row_timestamp'], row['operating_state']]
+			for header in column_map.keys():
+				data_tuple.append(row.get(header, None))
+			insert_tuples.append(tuple(data_tuple))
+		cursor = self.connection.cursor()
+		try:
+			cursor.executemany(query, insert_tuples)
+			self.connection.commit()
+			logging.info(f"Inserted {cursor.rowcount} data rows for log_id {log_id}.")
+		except Error as e:
+			logging.error(f"Failed to batch insert data for log_id {log_id}: {e}")
+			self.connection.rollback()
+		finally:
+			cursor.close()
+
+	def get_first_valid_coord(self, log_id, lat_pid, lon_pid):
+		query = f"SELECT `{lat_pid}`, `{lon_pid}` FROM log_data WHERE log_id = %s AND `{lat_pid}` != 0 AND `{lon_pid}` != 0 ORDER BY timestamp ASC LIMIT 1"
+		return self.fetch_one(query, (log_id,))
+
+	def get_last_valid_coord(self, log_id, lat_pid, lon_pid):
+		query = f"SELECT `{lat_pid}`, `{lon_pid}` FROM log_data WHERE log_id = %s AND `{lat_pid}` != 0 AND `{lon_pid}` != 0 ORDER BY timestamp DESC LIMIT 1"
+		return self.fetch_one(query, (log_id,))
+
+	def get_all_logs(self):
+		query = "SELECT li.log_id, li.file_name, li.start_timestamp, li.trip_duration_seconds, t.distance_miles FROM log_index li LEFT JOIN trips t ON li.log_id = t.log_id ORDER BY li.start_timestamp DESC"
+		return self.fetch_all(query)
+	
+	def get_data_for_log(self, log_id, pids_to_fetch=None):
+		log_index_entry = self.fetch_one("SELECT column_ids_json FROM log_index WHERE log_id = %s", (log_id,))
+		if not log_index_entry: raise ValueError(f"No log found with log_id: {log_id}")
+		column_ids_json = log_index_entry.get('column_ids_json')
+		if not column_ids_json: return [], [], {}, {}
+		column_ids = json.loads(column_ids_json)
+		if not column_ids: return [], [], {}, {}
+		format_strings = ','.join(['%s'] * len(column_ids))
+		cols_query = f"SELECT sanitized_name, column_name FROM column_definitions WHERE column_id IN ({format_strings})"
+		cursor = self.connection.cursor(dictionary=True)
+		cursor.execute(cols_query, tuple(column_ids))
+		column_info = cursor.fetchall()
+		cursor.close()
+		sanitized_names = [c['sanitized_name'] for c in column_info]
+		normalized_names = {c['sanitized_name']: c['column_name'] for c in column_info}
+		if not sanitized_names: return [], [], {}, {}
+		
+		if pids_to_fetch:
+			requested_sanitized = [s for s, n in normalized_names.items() if n in pids_to_fetch]
+			sanitized_names = requested_sanitized
+		
+		statistics = self.get_pid_statistics(sanitized_names)
+		cols_for_select = ", ".join([f"`{name}`" for name in sanitized_names])
+		data_query = f"SELECT data_id, timestamp, operating_state, {cols_for_select} FROM log_data WHERE log_id = %s ORDER BY timestamp ASC"
+		data_rows = self.fetch_all(data_query, (log_id,))
+		return data_rows, ['data_id', 'timestamp', 'operating_state'] + sanitized_names, statistics, normalized_names
+
+	def get_all_trip_groups(self):
+		query = "SELECT trip_group_id, COUNT(trip_id) as trip_count, AVG(start_lat) as avg_start_lat, AVG(start_lon) as avg_start_lon, AVG(end_lat) as avg_end_lat, AVG(end_lon) as avg_end_lon FROM trips WHERE trip_group_id IS NOT NULL GROUP BY trip_group_id HAVING trip_count > 1 ORDER BY trip_count DESC;"
+		return self.fetch_all(query)
+
+	def get_logs_for_trip_group(self, group_id):
+		query = "SELECT li.log_id, li.file_name, li.start_timestamp, li.trip_duration_seconds FROM log_index li JOIN trips t ON li.log_id = t.log_id WHERE t.trip_group_id = %s ORDER BY li.start_timestamp ASC;"
+		return self.fetch_all(query, (group_id,))
+
+	def get_trip_group_summary(self):
+		query = "SELECT trip_group_id, COUNT(trip_id) as count FROM trips WHERE trip_group_id IS NOT NULL GROUP BY trip_group_id"
+		groups = self.fetch_all(query)
+		total_logs_query = "SELECT COUNT(log_id) as total FROM log_index"
+		total_logs = self.fetch_one(total_logs_query)['total']
+		group_counts = {"groups_of_2": 0, "groups_of_3_4": 0, "groups_of_5_plus": 0}
+		total_trips_in_groups = 0
+		for group in groups:
+			count = group['count']
+			if count == 2: group_counts["groups_of_2"] += 1
+			elif count in [3, 4]: group_counts["groups_of_3_4"] += 1
+			elif count >= 5: group_counts["groups_of_5_plus"] += 1
+			if count > 1: total_trips_in_groups += count
+		return {"total_groups": len([g for g in groups if g['count'] > 1]), "total_trips_grouped": total_trips_in_groups, "total_logs": total_logs, "group_counts": group_counts}
+
+	def close(self):
+		if self.connection and self.connection.is_connected():
+			self.connection.close()
+
+### end db_manager.py ###			
+
+### backend/db_credentials.py ###
+
+# FILE: db_credentials.py
+#
+# Enter your MySQL database credentials here.
+# This file is imported by the application and should be kept secure.
+
+DB_CONFIG = {
+	'host': 'localhost',
+	'user': 'root',
+	'password': '```REDACTED```',
+	'database': 'obd2logs'
+}
+
+### end db_credentials.py ###
+
+``` the following file is the most recent version that I got from the AI, however, I believe this is a version regress, and I have included the previous version of the file below this ```
+
+### backend/group_trips.py ###
+import logging
+import sys
+import hashlib
+from math import radians, cos, sin, asin, sqrt
+
+sys.path.append('..')
+
+from db_credentials import DB_CONFIG
+from log2db.db_manager import DatabaseManager
+from log2db.utils import setup_logging
+
+def haversine(lon1, lat1, lon2, lat2):
+	try:
+		lon1, lat1, lon2, lat2 = map(radians, [float(lon1), float(lat1), float(lon2), float(lat2)])
+		dlon = lon2 - lon1 
+		dlat = lat2 - lat1 
+		a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+		c = 2 * asin(sqrt(a)) 
+		r_miles = 3956
+		return c * r_miles
+	except (ValueError, TypeError):
+		return 0.0
+
+def generate_group_id(lat1, lon1, lat2, lon2, sensitivity=3):
+	if any(v is None for v in [lat1, lon1, lat2, lon2]): return None
+	try:
+		p1 = (round(float(lat1), sensitivity), round(float(lon1), sensitivity))
+		p2 = (round(float(lat2), sensitivity), round(float(lon2), sensitivity))
+		sorted_points = sorted([p1, p2])
+		s = f"{sorted_points[0][0]}:{sorted_points[0][1]}|{sorted_points[1][0]}:{sorted_points[1][1]}"
+		return hashlib.sha256(s.encode()).hexdigest()
+	except (ValueError, TypeError):
+		return None
+
+def find_first_valid_coords(data_rows, lat_pid, lon_pid):
+	for row in data_rows:
+		lat = float(row.get(lat_pid, 0))
+		lon = float(row.get(lon_pid, 0))
+		if lat != 0 and lon != 0:
+			return lat, lon
+	return None, None
+
+def group_trips_logic(preview_mode=False, sensitivity=3):
+	logger = logging.getLogger(__name__)
+	db_manager = None
+	try:
+		db_manager = DatabaseManager(DB_CONFIG)
+		all_logs = db_manager.get_all_logs()
+		if not all_logs:
+			logger.info("No logs found to process.")
+			return {} if preview_mode else None
+
+		all_cols = db_manager.get_all_defined_columns()
+		lat_pid_info = next((info for name, info in all_cols.items() if 'latitude' in name), None)
+		lon_pid_info = next((info for name, info in all_cols.items() if 'longitude' in name), None)
+
+		if not lat_pid_info or not lon_pid_info:
+			logger.error("Could not find latitude/longitude PIDs.")
+			return {} if preview_mode else None
+		
+		lat_pid = lat_pid_info['sanitized_name']
+		lon_pid = lon_pid_info['sanitized_name']
+		
+		updates = []
+		groups_preview = {}
+
+		for log in all_logs:
+			log_id = log['log_id']
+			start_coords = db_manager.get_first_valid_coord(log_id, lat_pid, lon_pid)
+			end_coords = db_manager.get_last_valid_coord(log_id, lat_pid, lon_pid)
+
+			if not start_coords or not end_coords: continue
+			
+			start_lat, start_lon = start_coords[lat_pid], start_coords[lon_pid]
+			end_lat, end_lon = end_coords[lat_pid], end_coords[lon_pid]
+
+			group_id = generate_group_id(start_lat, start_lon, end_lat, end_lon, sensitivity)
+			distance = haversine(start_lon, start_lat, end_lon, end_lat)
+
+			if preview_mode:
+				if group_id:
+					if group_id not in groups_preview:
+						groups_preview[group_id] = []
+					groups_preview[group_id].append(log_id)
+			else:
+				updates.append((log_id, start_lat, start_lon, end_lat, end_lon, group_id, distance))
+
+		if preview_mode:
+			return groups_preview
+
+		if updates:
+			cursor = db_manager.connection.cursor()
+			query = "INSERT INTO trips (log_id, start_lat, start_lon, end_lat, end_lon, trip_group_id, distance_miles) VALUES (%s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE start_lat=VALUES(start_lat), start_lon=VALUES(start_lon), end_lat=VALUES(end_lat), end_lon=VALUES(end_lon), trip_group_id=VALUES(trip_group_id), distance_miles=VALUES(distance_miles)"
+			cursor.executemany(query, updates)
+			db_manager.connection.commit()
+			logger.info(f"Successfully inserted/updated trip data for {len(updates)} logs. Rows affected: {cursor.rowcount}")
+			cursor.close()
+	finally:
+		if db_manager:
+			db_manager.close()
+
+def main():
+	setup_logging()
+	logger = logging.getLogger(__name__)
+	logger.info("--- Starting Trip Grouping Process (v1.9.0) ---")
+	group_trips_logic()
+	logger.info("--- Trip Grouping Process Finished ---")
+
+if __name__ == "__main__":
+	main()
+### end group_trips.py ###
+
+
+``` this is the version which I believe is more complete, but was replaced by the above suspected version regression ```
+### backend\group_trips.py ###
+# --- VERSION 1.9.7-ALPHA ---
+# - This is the complete, corrected, and fully implemented file.
+# - It uses the optimized `get_first/last_valid_coord` methods from the
+#   db_manager to ensure high performance.
+# - It correctly uses `INSERT ... ON DUPLICATE KEY UPDATE` to be safely
+#   re-runnable.
+# -----------------------------
+
+import logging
+import sys
+import hashlib
+from math import radians, cos, sin, asin, sqrt
+
+sys.path.append('..')
+
+from db_credentials import DB_CONFIG
+from log2db.db_manager import DatabaseManager
+from log2db.utils import setup_logging
+
+def haversine(lon1, lat1, lon2, lat2):
+	try:
+		lon1, lat1, lon2, lat2 = map(radians, [float(lon1), float(lat1), float(lon2), float(lat2)])
+		dlon = lon2 - lon1 
+		dlat = lat2 - lat1 
+		a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+		c = 2 * asin(sqrt(a)) 
+		r_miles = 3956
+		return c * r_miles
+	except (ValueError, TypeError):
+		return 0.0
+
+def generate_group_id(lat1, lon1, lat2, lon2, sensitivity=3):
+	if any(v is None for v in [lat1, lon1, lat2, lon2]): return None
+	try:
+		p1 = (round(float(lat1), sensitivity), round(float(lon1), sensitivity))
+		p2 = (round(float(lat2), sensitivity), round(float(lon2), sensitivity))
+		sorted_points = sorted([p1, p2])
+		s = f"{sorted_points[0][0]}:{sorted_points[0][1]}|{sorted_points[1][0]}:{sorted_points[1][1]}"
+		return hashlib.sha256(s.encode()).hexdigest()
+	except (ValueError, TypeError):
+		return None
+
+def group_trips_logic(preview_mode=False, sensitivity=3):
+	logger = logging.getLogger(__name__)
+	db_manager = None
+	try:
+		db_manager = DatabaseManager(DB_CONFIG)
+		all_logs = db_manager.get_all_logs()
+		if not all_logs:
+			logger.info("No logs found to process.")
+			return {} if preview_mode else None
+
+		all_cols = db_manager.get_all_defined_columns()
+		lat_pid_info = next((info for name, info in all_cols.items() if 'latitude' in name), None)
+		lon_pid_info = next((info for name, info in all_cols.items() if 'longitude' in name), None)
+
+		if not lat_pid_info or not lon_pid_info:
+			logger.error("Could not find latitude/longitude PIDs.")
+			return {} if preview_mode else None
+		
+		lat_pid = lat_pid_info['sanitized_name']
+		lon_pid = lon_pid_info['sanitized_name']
+		
+		updates = []
+		groups_preview = {}
+
+		for log in all_logs:
+			log_id = log['log_id']
+			start_coords = db_manager.get_first_valid_coord(log_id, lat_pid, lon_pid)
+			end_coords = db_manager.get_last_valid_coord(log_id, lat_pid, lon_pid)
+
+			if not start_coords or not end_coords: continue
+			
+			start_lat, start_lon = start_coords[lat_pid], start_coords[lon_pid]
+			end_lat, end_lon = end_coords[lat_pid], end_coords[lon_pid]
+
+			group_id = generate_group_id(start_lat, start_lon, end_lat, end_lon, sensitivity)
+			distance = haversine(start_lon, start_lat, end_lon, end_lat)
+
+			if preview_mode:
+				if group_id:
+					if group_id not in groups_preview:
+						groups_preview[group_id] = []
+					groups_preview[group_id].append(log_id)
+			else:
+				updates.append((log_id, start_lat, start_lon, end_lat, end_lon, group_id, distance))
+
+		if preview_mode:
+			return groups_preview
+
+		if updates:
+			cursor = db_manager.connection.cursor()
+			query = "INSERT INTO trips (log_id, start_lat, start_lon, end_lat, end_lon, trip_group_id, distance_miles) VALUES (%s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE start_lat=VALUES(start_lat), start_lon=VALUES(start_lon), end_lat=VALUES(end_lat), end_lon=VALUES(end_lon), trip_group_id=VALUES(trip_group_id), distance_miles=VALUES(distance_miles)"
+			cursor.executemany(query, updates)
+			db_manager.connection.commit()
+			logger.info(f"Successfully inserted/updated trip data for {len(updates)} logs. Rows affected: {cursor.rowcount}")
+			cursor.close()
+	finally:
+		if db_manager:
+			db_manager.close()
+
+def main():
+	setup_logging()
+	logger = logging.getLogger(__name__)
+	logger.info("--- Starting Trip Grouping Process (v1.9.7-ALPHA) ---")
+	group_trips_logic()
+	logger.info("--- Trip Grouping Process Finished ---")
+
+if __name__ == "__main__":
+	main()
+### end group_trips.py ###	
+
+``` the following are one-time tools ```
+
+### backend/backfill_trips.py ###
+
+# FILE: backend/backfill_trips.py
+#
+# --- VERSION 1.4.0 ---
+# - This is a new, one-time utility script to populate the new `trips` table.
+# - It iterates through all logs, finds the first and last GPS coordinates,
+#   and creates a corresponding entry in the `trips` table.
+# -----------------------------
+
+import logging
+import sys
+
+sys.path.append('..')
+
+from db_credentials import DB_CONFIG
+from log2db.db_manager import DatabaseManager
+from log2db.utils import setup_logging
+
+def backfill():
+	logger = setup_logging()
+	logger.info("--- Starting Backfill Process for Trips Table ---")
+
+	db_manager = None
+	try:
+		db_manager = DatabaseManager(DB_CONFIG)
+		db_manager.ensure_base_tables_exist()
+
+		all_logs = db_manager.get_all_logs()
+		if not all_logs:
+			logger.info("No logs found to process. Exiting.")
+			return
+
+		total_logs = len(all_logs)
+		logger.info(f"Found {total_logs} logs to process for the trips table.")
+
+		for i, log in enumerate(all_logs):
+			log_id = log['log_id']
+			
+			# Check if a trip entry already exists for this log_id
+			existing_trip = db_manager.fetch_one("SELECT trip_id FROM trips WHERE log_id = %s", (log_id,))
+			if existing_trip:
+				logger.info(f"Log {i+1}/{total_logs} (ID: {log_id}) already has a trip entry. Skipping.")
+				continue
+
+			logger.info(f"Processing log {i+1}/{total_logs} (ID: {log_id})...")
+
+			try:
+				data_rows, pids, _ = db_manager.get_data_for_log(log_id)
+				if not data_rows:
+					logger.warning(f"  Log ID {log_id} has no data. Creating trip entry with NULL coordinates.")
+					db_manager.execute_query("INSERT INTO trips (log_id) VALUES (%s)", (log_id,))
+					continue
+
+				lat_pid = next((p for p in pids if 'latitude' in p), None)
+				lon_pid = next((p for p in pids if 'longitude' in p), None)
+
+				if not lat_pid or not lon_pid:
+					logger.warning(f"  Log ID {log_id} is missing GPS PIDs. Creating trip entry with NULL coordinates.")
+					db_manager.execute_query("INSERT INTO trips (log_id) VALUES (%s)", (log_id,))
+					continue
+
+				start_lat = data_rows[0].get(lat_pid)
+				start_lon = data_rows[0].get(lon_pid)
+				end_lat = data_rows[-1].get(lat_pid)
+				end_lon = data_rows[-1].get(lon_pid)
+
+				insert_query = """
+				INSERT INTO trips (log_id, start_lat, start_lon, end_lat, end_lon)
+				VALUES (%s, %s, %s, %s, %s)
+				"""
+				params = (log_id, start_lat, start_lon, end_lat, end_lon)
+				if db_manager.execute_query(insert_query, params):
+					logger.info(f"  Successfully created trip entry for log ID {log_id}.")
+
+			except Exception as e:
+				logger.error(f"  An error occurred processing log ID {log_id}: {e}", exc_info=True)
+
+	except Exception as e:
+		logger.critical(f"A critical error occurred during the backfill process: {e}", exc_info=True)
+	finally:
+		if db_manager:
+			db_manager.close()
+		logger.info("--- Trips Backfill Process Finished ---")
+
+if __name__ == "__main__":
+	backfill()
+	
+### end backfill_trips.py ###
+
+### backend/backfill_states.py ###
+
+# FILE: backend/backfill_states.py
+#
+# --- VERSION 1.3.0 ---
+# - No functional changes are needed in this script. It is designed to work
+#   with the updated `state_detector` and `db_manager` modules.
+# - Running this script will erase the old, simple operating states from your
+#   database and replace them with the new, more intelligent classifications.
+# -----------------------------
+
+import logging
+import sys
+
+# Add the parent directory to the path to allow sibling imports
+sys.path.append('..')
+
+from db_credentials import DB_CONFIG
+from log2db.db_manager import DatabaseManager
+from log2db.state_detector import classify_operating_states
+from log2db.utils import setup_logging
+
+def backfill():
+	"""
+	One-time script to iterate through all existing log data,
+	classify operating states, and update the database.
+	"""
+	logger = setup_logging()
+	logger.info("--- Starting Backfill Process for Operating States ---")
+
+	db_manager = None
+	try:
+		db_manager = DatabaseManager(DB_CONFIG)
+		
+		db_manager.ensure_base_tables_exist()
+
+		all_logs = db_manager.get_all_logs()
+		if not all_logs:
+			logger.info("No logs found in the database. Exiting.")
+			return
+
+		total_logs = len(all_logs)
+		logger.info(f"Found {total_logs} logs to process.")
+
+		for i, log in enumerate(all_logs):
+			log_id = log['log_id']
+			logger.info(f"Processing log {i+1}/{total_logs} (ID: {log_id})...")
+
+			try:
+				data_rows, pids, _ = db_manager.get_data_for_log(log_id) # We don't need stats here
+				if not data_rows:
+					logger.warning(f"  Log ID {log_id} has no data rows. Skipping.")
+					continue
+
+				classified_rows = classify_operating_states(data_rows, pids)
+
+				updates = []
+				for row in classified_rows:
+					if 'data_id' not in row:
+						logger.error(f"  Row in log {log_id} is missing 'data_id'. Cannot update.")
+						continue
+					updates.append((row['operating_state'], row['data_id']))
+
+				if not updates:
+					logger.warning(f"  No rows to update for log ID {log_id}.")
+					continue
+
+				cursor = db_manager.connection.cursor()
+				update_query = "UPDATE log_data SET operating_state = %s WHERE data_id = %s"
+				cursor.executemany(update_query, updates)
+				db_manager.connection.commit()
+				logger.info(f"  Successfully updated {cursor.rowcount} rows for log ID {log_id}.")
+				cursor.close()
+
+			except Exception as e:
+				logger.error(f"  An error occurred processing log ID {log_id}: {e}", exc_info=True)
+
+	except Exception as e:
+		logger.critical(f"A critical error occurred during the backfill process: {e}", exc_info=True)
+	finally:
+		if db_manager:
+			db_manager.close()
+		logger.info("--- Backfill Process Finished ---")
+
+if __name__ == "__main__":
+	backfill()
+	
+### end backfill_states.py ###
+
+### backend/scrub_vehicle_data.py ###
+	
+# FILE: backend/scrub_vehicle_data.py
+#
+# --- VERSION 1.6.1 ---
+# - FIXED: A NameError caused by attempting to use the `json` module
+#   without importing it first. Added `import json`.
+# -----------------------------
+
+import logging
+import sys
+import json # <-- FIX: Added missing import
+
+sys.path.append('..')
+
+from db_credentials import DB_CONFIG
+from log2db.db_manager import DatabaseManager
+from log2db.utils import setup_logging
+
+# --- CONFIGURATION ---
+# Add the exact, normalized (lowercase, no units) names of PIDs that are
+# unique to the vehicles you want to REMOVE.
+# For your XJ/WJ, this would include the Bank 2 sensors.
+MARKER_PIDS = [
+	'seconds idling',
+]
+# ---------------------
+
+def scrub_data():
+	logger = setup_logging()
+	logger.info("--- Starting Vehicle Data Scrubbing Process ---")
+	logger.warning("This is a destructive operation. Please back up your database first.")
+	
+	# Confirm with the user before proceeding
+	confirm = input(f"This will delete all logs containing {len(MARKER_PIDS)} marker PIDs. Are you sure? (yes/no): ").lower()
+	if confirm != 'yes':
+		logger.info("Operation cancelled by user.")
+		return
+
+	db_manager = None
+	try:
+		db_manager = DatabaseManager(DB_CONFIG)
+
+		# 1. Find all column_ids for our marker PIDs
+		format_strings = ','.join(['%s'] * len(MARKER_PIDS))
+		query = f"SELECT column_id FROM column_definitions WHERE column_name IN ({format_strings})"
+		marker_col_ids = [row['column_id'] for row in db_manager.fetch_all(query, tuple(MARKER_PIDS))]
+		
+		if not marker_col_ids:
+			logger.info("No column definitions found for the specified marker PIDs. Nothing to scrub.")
+			return
+
+		logger.info(f"Found {len(marker_col_ids)} column definitions matching marker PIDs.")
+
+		# 2. Find all log_ids that contain any of these column_ids
+		log_ids_to_delete = set()
+		all_logs = db_manager.fetch_all("SELECT log_id, column_ids_json FROM log_index")
+		for log in all_logs:
+			log_col_ids = json.loads(log['column_ids_json'] or '[]')
+			if any(cid in marker_col_ids for cid in log_col_ids):
+				log_ids_to_delete.add(log['log_id'])
+
+		if not log_ids_to_delete:
+			logger.info("No logs found containing the marker PIDs. Nothing to delete.")
+			return
+
+		logger.warning(f"Identified {len(log_ids_to_delete)} logs to be permanently deleted.")
+		log_id_list = list(log_ids_to_delete)
+		format_strings = ','.join(['%s'] * len(log_id_list))
+
+		# 3. Perform cascading deletes in the correct order
+		logger.info("Deleting associated trips...")
+		db_manager.execute_query(f"DELETE FROM trips WHERE log_id IN ({format_strings})", tuple(log_id_list))
+		
+		logger.info("Deleting associated log data rows...")
+		db_manager.execute_query(f"DELETE FROM log_data WHERE log_id IN ({format_strings})", tuple(log_id_list))
+
+		logger.info("Deleting log index entries...")
+		db_manager.execute_query(f"DELETE FROM log_index WHERE log_id IN ({format_strings})", tuple(log_id_list))
+		
+		logger.info("Deletion complete.")
+
+		# 4. Clean up orphaned column definitions
+		logger.info("Scanning for and cleaning up orphaned column definitions...")
+		all_cols = db_manager.fetch_all("SELECT column_id FROM column_definitions")
+		all_col_ids = {row['column_id'] for row in all_cols}
+
+		remaining_logs = db_manager.fetch_all("SELECT column_ids_json FROM log_index")
+		used_col_ids = set()
+		for log in remaining_logs:
+			used_col_ids.update(json.loads(log['column_ids_json'] or '[]'))
+		
+		orphaned_ids = list(all_col_ids - used_col_ids)
+		if orphaned_ids:
+			logger.info(f"Found {len(orphaned_ids)} orphaned column definitions to remove.")
+			format_strings = ','.join(['%s'] * len(orphaned_ids))
+			db_manager.execute_query(f"DELETE FROM column_definitions WHERE column_id IN ({format_strings})", tuple(orphaned_ids))
+		else:
+			logger.info("No orphaned column definitions found.")
+
+	except Exception as e:
+		logger.critical(f"A critical error occurred during the scrubbing process: {e}", exc_info=True)
+	finally:
+		if db_manager:
+			db_manager.close()
+		logger.info("--- Vehicle Data Scrubbing Finished ---")
+
+if __name__ == "__main__":
+	scrub_data()	
+	
+### end scrub_vehicle_data.py ###
+
+``` I'm not sure which of the following files are actually used in the existing application, some might be legacy leftovers from a previous attempt at developing this. ```
+
+### backend/log2db/__init__.py ###
+
+# FILE: log2db/__init__.py
+#
+# This file can be left empty.
+# It tells Python that the 'log2db' directory is a package.
+
+### end __init__.py ###
+
+### backend/log2db/utils.py ###
+# FILE: log2db/utils.py
+#
+# Contains utility and helper functions for the application.
+#
+# --- VERSION 0.8.3 CHANGE ---
+# - `parse_start_timestamp` is now much more robust.
+#   - It now handles multiple date formats (YYYY-MM-DD and MM/DD/YYYY with AM/PM).
+#   - The regex now accepts either ':' or '=' as a separator.
+# - All `open()` calls now use `encoding='utf-8-sig'` to automatically handle
+#   and strip the UTF-8 Byte Order Mark (BOM) character from the start of files.
+# -----------------------------
+
+import logging
+import os
+import re
+from datetime import datetime
+import pytz
+
+def setup_logging():
+	"""Configures the logging for the application."""
+	log_dir = 'program_logs'
+	if not os.path.exists(log_dir):
+		os.makedirs(log_dir)
+	
+	log_file_name = datetime.now().strftime("log2db_%Y%m%d_%H%M%S.log")
+	log_file_path = os.path.join(log_dir, log_file_name)
+
+	logging.basicConfig(
+		level=logging.INFO,
+		format='%(asctime)s - %(levelname)-8s - %(message)s',
+		handlers=[
+			logging.FileHandler(log_file_path),
+			logging.StreamHandler()
+		]
+	)
+	logging.getLogger('mysql.connector').setLevel(logging.WARNING)
+	return logging.getLogger(__name__)
+
+def sanitize_column_name(header):
+	"""Converts a CSV header into a valid SQL column name."""
+	s = re.sub(r'[^a-zA-Z0-9_]', '_', header)
+	s = s.strip('_')
+	if s and s[0].isdigit():
+		s = '_' + s
+	return s
+
+def infer_mysql_type(value_sample):
+	"""Infers the MySQL data type from a sample value."""
+	if value_sample is None or value_sample.strip() == '':
+		return 'VARCHAR(255)'
+	try:
+		float(value_sample)
+		return 'FLOAT'
+	except (ValueError, TypeError):
+		return 'VARCHAR(255)'
+
+def parse_start_timestamp(file_path):
+	"""
+	Scans the top of a CSV file for a timestamp line and converts it to Unix time.
+	This version is robust and handles multiple formats.
+	"""
+	file_name = os.path.basename(file_path)
+	logging.info(f"Scanning for timestamp in: {file_name}")
+	cst = pytz.timezone('America/Chicago')
+	# Flexible regex: matches "StartTime" or "Start Time", case-insensitive, with ':' or '='.
+	timestamp_pattern = re.compile(r"#\s*Start\s?Time\s*[:=]\s*(.*)", re.IGNORECASE)
+	
+	try:
+		# Use 'utf-8-sig' to automatically handle the BOM character.
+		with open(file_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
+			for i, line in enumerate(f):
+				if i < 5:
+					logging.info(f"  > Scanning line {i+1}: '{line.strip()}'")
+				
+				match = timestamp_pattern.search(line)
+				if match:
+					timestamp_str = match.group(1).strip()
+					logging.info(f"  SUCCESS: Found raw timestamp string: '{timestamp_str}'")
+					
+					# List of possible formats to try parsing.
+					possible_formats = [
+						"%m/%d/%Y %I:%M:%S.%f %p",  # MM/DD/YYYY HH:MM:SS.ms AM/PM
+						"%m/%d/%Y %I:%M:%S %p",     # MM/DD/YYYY HH:MM:SS AM/PM
+						"%Y-%m-%d %H:%M:%S",       # YYYY-MM-DD HH:MM:SS (24-hour)
+					]
+					
+					local_dt = None
+					for dt_format in possible_formats:
+						try:
+							local_dt = datetime.strptime(timestamp_str, dt_format)
+							logging.info(f"    > Matched format: '{dt_format}'")
+							break  # Success, exit the format-trying loop
+						except ValueError:
+							continue # Failed, try the next format
+					
+					if local_dt is None:
+						logging.error(f"    > FAILED: Could not parse '{timestamp_str}' with any known format.")
+						return None
+
+					cst_dt = cst.localize(local_dt)
+					unix_timestamp = int(cst_dt.timestamp())
+					logging.info(f"  > Converted to Unix timestamp (UTC): {unix_timestamp}")
+					return unix_timestamp
+				
+				if line.strip() and not line.strip().startswith('#'):
+					logging.warning(f"  STOP: Reached non-comment line without finding timestamp.")
+					break
+	except Exception as e:
+		logging.error(f"  ERROR: An exception occurred while reading {file_path}: {e}")
+		
+	return None
+### end utils.py ###
+
+### backend/log2db/state_detector.py ###
+
+# FILE: backend/log2db/state_detector.py
+#
+# --- VERSION 1.4.0 ---
+# - PERMANENT FIX: The PID lookup keys have been corrected to use underscores
+#   (e.g., 'engine_rpm') to match the final sanitized names used throughout the
+#   application. This reflects the user's correct debugging and ensures
+#   consistency.
+# -----------------------------
+
+import logging
+
+WARM_ENGINE_TEMP_F = 170
+HIGH_LOAD_THRESHOLD = 70
+HIGHWAY_SPEED_MPH = 50
+
+def classify_operating_states(data_rows, pids):
+	if not data_rows:
+		return []
+
+	# --- PERMANENT FIX: Use the correct, sanitized PID names for lookup ---
+	rpm_pid = 'engine_rpm'
+	speed_pid = 'vehicle_speed'
+	load_pid = 'calculated_load_value'
+	coolant_pid = 'engine_coolant_temperature'
+	fuel_status_pid = 'fuel_system_1_status'
+
+	available_pids = set(pids)
+	if rpm_pid not in available_pids: rpm_pid = None
+	if speed_pid not in available_pids: speed_pid = None
+	if load_pid not in available_pids: load_pid = None
+	if coolant_pid not in available_pids: coolant_pid = None
+	if fuel_status_pid not in available_pids: fuel_status_pid = None
+	
+	logging.info(f"State detection using PIDs: FuelStatus='{fuel_status_pid}', RPM='{rpm_pid}', Speed='{speed_pid}'")
+
+	for row in data_rows:
+		state = 'Unknown'
+		try:
+			rpm = float(row.get(rpm_pid, 0)) if rpm_pid else 0
+			speed = float(row.get(speed_pid, 0)) if speed_pid else 0
+			load = float(row.get(load_pid, 0)) if load_pid else 0
+			coolant_temp = float(row.get(coolant_pid, 180)) if coolant_pid else 180
+			fuel_status = int(float(row.get(fuel_status_pid, 0))) if fuel_status_pid else 0
+
+			if fuel_status == 0 or rpm == 0:
+				state = 'Engine Off'
+			elif fuel_status == 1:
+				state = 'Open Loop (Cold Start)'
+			elif fuel_status == 2:
+				if speed == 0: state = 'Closed Loop (Idle)'
+				elif speed >= HIGHWAY_SPEED_MPH: state = 'Closed Loop (Highway)'
+				else: state = 'Closed Loop (City)'
+			elif fuel_status == 4:
+				if speed == 0: state = 'Open Loop (Idle)'
+				elif load > HIGH_LOAD_THRESHOLD: state = 'Open Loop (WOT Accel)'
+				else: state = 'Open Loop (Decel Fuel Cut)'
+			elif fuel_status == 8: state = 'FAULT - Open Loop'
+			elif fuel_status == 16: state = 'FAULT - Closed Loop'
+
+			if coolant_temp < WARM_ENGINE_TEMP_F and rpm > 0 and state != 'Open Loop (Cold Start)':
+				state = f"{state} (Warm-up)"
+		except (ValueError, TypeError):
+			state = 'Unknown (Err)'
+		
+		row['operating_state'] = state
+		
+	return data_rows
+	
+### end state_detector.py ###	
+
+### backend/log2db/core.py ###
+
+# FILE: backend/log2db/core.py
+#
+# --- VERSION 1.2.0 ---
+# - Now imports and uses the `classify_operating_states` function from the
+#   new `state_detector` module to add context to each data row before ingestion.
+# -----------------------------
+
+import os
+import csv
+import logging
+import json
+import re
+from .utils import parse_start_timestamp, infer_mysql_type
+from .state_detector import classify_operating_states
+
+def find_header_row(file_path):
+	with open(file_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
+		for i, line in enumerate(f):
+			line = line.strip()
+			if line and not line.startswith('#'):
+				reader = csv.reader([line])
+				raw_headers = next(reader)
+				normalized_headers = []
+				for h in raw_headers:
+					no_units = re.sub(r'\s*\([^)]*\)$', '', h)
+					no_extra_space = re.sub(r'\s+', ' ', no_units).strip()
+					final_header = no_extra_space.lower()
+					normalized_headers.append(final_header)
+				return i, normalized_headers
+	return -1, None
+
+def process_log_file(file_path, db_manager):
+	file_name = os.path.basename(file_path)
+	logging.info(f"--- Processing file: {file_name} ---")
+
+	if db_manager.is_file_processed(file_name):
+		logging.info(f"Skipping '{file_name}', already in database.")
+		return True, "skipped"
+
+	start_timestamp = parse_start_timestamp(file_path)
+	if start_timestamp is None: return False, "error"
+	
+	header_row_index, headers = find_header_row(file_path)
+	if not headers:
+		logging.error(f"Could not find a valid header row in '{file_name}'.")
+		return False, "error"
+	logging.info(f"Normalized Headers: {headers}")
+
+	data_rows = []
+	try:
+		with open(file_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
+			for _ in range(header_row_index + 1): next(f)
+			reader = csv.DictReader(f, fieldnames=headers)
+			for row in reader:
+				if any(row.values()): data_rows.append(row)
+	except Exception as e:
+		logging.error(f"Error reading data from '{file_name}': {e}")
+		return False, "error"
+
+	if not data_rows:
+		logging.warning(f"No data rows found in '{file_name}'.")
+		return True, "skipped_no_data"
+	logging.info(f"Read {len(data_rows)} data rows from '{file_name}'.")
+
+	data_rows = classify_operating_states(data_rows, headers)
+
+	defined_columns = db_manager.get_all_defined_columns()
+	
+	first_data_row = data_rows[0]
+	for header in headers:
+		if header not in defined_columns:
+			sample_value = first_data_row.get(header)
+			mysql_type = infer_mysql_type(sample_value)
+			new_col_info = db_manager.add_new_column(header, mysql_type)
+			if new_col_info:
+				defined_columns[header] = new_col_info
+			else:
+				logging.critical(f"Could not add new column '{header}'.")
+				return False, "error"
+
+	normalized_time_header = 'time'
+	last_row_time_str = data_rows[-1].get(normalized_time_header, '0')
+	try:
+		duration = float(last_row_time_str) if last_row_time_str and last_row_time_str.strip() else 0.0
+	except (ValueError, TypeError):
+		duration = 0.0
+	logging.info(f"Calculated trip duration: {duration:.2f} seconds.")
+
+	current_log_column_ids = [defined_columns[h]['column_id'] for h in headers if h in defined_columns]
+	column_ids_json = json.dumps(current_log_column_ids)
+
+	log_id = db_manager.insert_log_index(file_name, start_timestamp, duration, column_ids_json)
+	if not log_id: return False, "error"
+
+	column_map = {h: defined_columns[h]['sanitized_name'] for h in headers}
+
+	for row in data_rows:
+		try:
+			time_offset_str = row.get(normalized_time_header)
+			time_offset = float(time_offset_str) if time_offset_str and time_offset_str.strip() else 0.0
+			row['row_timestamp'] = start_timestamp + int(time_offset)
+		except (ValueError, TypeError):
+			row['row_timestamp'] = start_timestamp
+	
+	if data_rows:
+		logging.info(f"Row timestamps calculated. First: {data_rows[0]['row_timestamp']}, Last: {data_rows[-1]['row_timestamp']}")
+
+	batch_size = 500
+	for i in range(0, len(data_rows), batch_size):
+		batch = data_rows[i:i + batch_size]
+		db_manager.insert_log_data_batch(log_id, batch, column_map)
+
+	logging.info(f"Successfully processed and ingested '{file_name}'.")
+	return True, "processed"
+
+### end core.py ###
+
+### backend/log2db/__main__.py ###
+
+# log2db/__main__.py
+
+import os
+import sys
+import logging
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+	from db_credentials import DB_CONFIG
+	from log2db.utils import setup_logging
+	from log2db.db_manager import DatabaseManager
+	from log2db.core import process_log_file
+except ImportError as e:
+	print(f"FATAL: A required file or module could not be imported: {e}", file=sys.stderr)
+	sys.exit(1)
+
+def main():
+	"""Main function to run the log processing."""
+	logger = setup_logging()
+	logger.info("==================================================")
+	logger.info("      Jeep Log Processing Tool v0.8.6 Started     ")
+	logger.info("==================================================")
+
+	db_manager = None
+	try:
+		db_manager = DatabaseManager(DB_CONFIG)
+		db_manager.ensure_base_tables_exist()
+
+		log_directory = 'logs'
+		if not os.path.isdir(log_directory):
+			logger.critical(f"Log directory '{log_directory}' not found.")
+			sys.exit(1)
+
+		log_files = sorted([f for f in os.listdir(log_directory) if f.lower().endswith('.csv')])
+		if not log_files:
+			logger.warning("No CSV files found in the 'logs' directory.")
+			return
+
+		logger.info(f"Found {len(log_files)} CSV files to process in '{log_directory}'.")
+		
+		success_count, skipped_count, error_count = 0, 0, 0
+
+		for file_name in log_files:
+			file_path = os.path.join(log_directory, file_name)
+			success, status = process_log_file(file_path, db_manager)
+			if success:
+				if status == "processed": success_count += 1
+				else: skipped_count += 1
+			else:
+				error_count += 1
+		
+		logger.info("----------------- JOB COMPLETE -----------------")
+		logger.info(f"Successfully Processed: {success_count}")
+		logger.info(f"Skipped (already done): {skipped_count}")
+		logger.info(f"Errors: {error_count}")
+		logger.info("--------------------------------------------------")
+
+	except Exception as e:
+		logging.critical(f"An unhandled exception occurred: {e}", exc_info=True)
+	finally:
+		if db_manager:
+			db_manager.close()
+		logging.info("Program finished.")
+
+
+if __name__ == "__main__":
+	main()
+
+### end __main__.py ###
+
+### frontend/package.json ###
+{
+  "name": "frontend",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+	"@testing-library/dom": "^10.4.0",
+	"@testing-library/jest-dom": "^6.6.3",
+	"@testing-library/react": "^16.3.0",
+	"@testing-library/user-event": "^13.5.0",
+	"axios": "^1.11.0",
+	"chart.js": "^4.5.0",
+	"chartjs": "^0.3.24",
+	"chartjs-plugin-annotation": "^3.1.0",
+	"chartjs-plugin-zoom": "^2.2.0",
+	"hammerjs": "^2.0.8",
+	"leaflet": "^1.9.4",
+	"postcss": "^8.5.6",
+	"react": "^19.1.0",
+	"react-chartjs-2": "^5.3.0",
+	"react-dom": "^19.1.0",
+	"react-leaflet": "^5.0.0",
+	"react-router-dom": "^7.7.1",
+	"react-scripts": "5.0.1",
+	"web-vitals": "^2.1.4"
+  },
+  "scripts": {
+	"start": "react-scripts start",
+	"build": "react-scripts build",
+	"test": "react-scripts test",
+	"eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+	"extends": [
+	  "react-app",
+	  "react-app/jest"
+	]
+  },
+  "browserslist": {
+	"production": [
+	  ">0.2%",
+	  "not dead",
+	  "not op_mini all"
+	],
+	"development": [
+	  "last 1 chrome version",
+	  "last 1 firefox version",
+	  "last 1 safari version"
+	]
+  },
+  "devDependencies": {
+	"@types/leaflet": "^1.9.20",
+	"tailwindcss": "^3.4.17"
+  }
+}
+### end package.json ###
+
+### frontend/src/App.js ###
+
+// FILE: frontend/src/App.js
+//
+// --- VERSION 1.8.0 ---
+// - Added new route for the "Tools" page.
+// - Added a navigation link to the new "Tools" page in the header.
+// -----------------------------
+
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import LogList from './LogList';
+import LogDetail from './LogDetail';
+import TripGroupList from './TripGroupList';
+import TripGroupDetail from './TripGroupDetail';
+import Tools from './Tools'; // New
+
+function App() {
+  return (
+	<Router>
+	  <div className="bg-gray-900 text-white min-h-screen font-sans">
+		<div className="container mx-auto p-4 md:p-8">
+		  <header className="mb-8 flex justify-between items-center border-b border-gray-700 pb-4">
+			<Link to="/" className="text-4xl font-bold text-cyan-400 hover:text-cyan-300 no-underline">
+			  Jeep Diagnostics Dashboard
+			</Link>
+			<nav className="flex items-center space-x-6">
+			  <Link to="/trip-groups" className="text-lg text-gray-300 hover:text-cyan-400">
+				Trip Groups
+			  </Link>
+			  <Link to="/tools" className="text-lg text-gray-300 hover:text-cyan-400">
+				Tools
+			  </Link>
+			</nav>
+		  </header>
+		  <main>
+			<Routes>
+			  <Route path="/" element={<LogList />} />
+			  <Route path="/logs/:logId" element={<LogDetail />} />
+			  <Route path="/trip-groups" element={<TripGroupList />} />
+			  <Route path="/trip-groups/:groupId" element={<TripGroupDetail />} />
+			  <Route path="/tools" element={<Tools />} />
+			</Routes>
+		  </main>
+		  <footer className="text-center mt-8 text-gray-500 text-sm">
+			<p>Jeep Log Processor v1.8.0</p>
+		  </footer>
+		</div>
+	  </div>
+	</Router>
+  );
+}
+
+export default App;
+
+### end App.js ###
+
+### frontend/src/App.css ###
+
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+	animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+	transform: rotate(0deg);
+  }
+  to {
+	transform: rotate(360deg);
+  }
+}
+
+### end App.css ###
+
+### frontend/src/index.js ###
+
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import './index.css';
+import App from './App';
+import reportWebVitals from './reportWebVitals';
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(
+  <React.StrictMode>
+	<App />
+  </React.StrictMode>
+);
+
+// If you want to start measuring performance in your app, pass a function
+// to log results (for example: reportWebVitals(console.log))
+// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
+reportWebVitals();
+
+### end index.js ###
+
+### frontend/src/index.css ###
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+### end index.css ###
+
+### frontend/src/LogDetail.js ###
+
+// FILE: frontend/src/LogDetail.js
+//
+// --- VERSION 1.9.7-ALPHA ---
+// - FIXED: Removed unused `handleComparisonChange` function to resolve the
+//   console warning.
+// ---------------------------
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import axios from 'axios';
+import { Line } from 'react-chartjs-2';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
+import zoomPlugin from 'chartjs-plugin-zoom';
+import TripMap from './TripMap';
+
+ChartJS.register( CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, zoomPlugin );
+
+const CHART_COLORS = [ '#38BDF8', '#F59E0B', '#4ADE80', '#F472B6', '#A78BFA' ];
+const COMPARISON_COLORS = [ '#0284C7', '#B45309', '#16A34A', '#DB2777', '#7C3AED' ];
+
+function PidSelector({ color, options, onChange, selectedValue }) {
+	return (
+		<div className="flex-1 flex items-center bg-gray-700 rounded-md p-2" style={{ borderLeft: `4px solid ${color}`}}>
+			<select value={selectedValue || 'none'} onChange={e => onChange(e.target.value)} className="bg-transparent text-white w-full focus:outline-none text-sm capitalize">
+				<option value="none">-- Select PID --</option>
+				{options.map(opt => <option key={opt} value={opt}>{opt.replace(/_/g, ' ')}</option>)}
+			</select>
+		</div>
+	);
+}
+
+function LogDetail() {
+	const { logId } = useParams();
+	const chartRef = useRef(null);
+	const [log, setLog] = useState(null);
+	const [selectedPIDs, setSelectedPIDs] = useState(['engine_rpm', 'vehicle_speed', 'none', 'none', 'none']);
+	const [comparisonLog, setComparisonLog] = useState(null);
+	const [visibleRange, setVisibleRange] = useState({ min: 0, max: 0 });
+
+	useEffect(() => {
+		const fetchLog = async () => {
+			try {
+				const response = await axios.get(`http://localhost:5001/api/logs/${logId}/data`);
+				setLog(response.data);
+				if (response.data.data.length > 0) {
+					setVisibleRange({ min: 0, max: response.data.data.length - 1 });
+				}
+			} catch (e) { console.error(e); }
+		};
+		fetchLog();
+		setComparisonLog(null);
+	}, [logId]);
+
+	const handlePidChange = (index, value) => {
+		const newPids = [...selectedPIDs];
+		newPids[index] = value === 'none' ? 'none' : value;
+		setSelectedPIDs(newPids);
+	};
+
+	const handleComparisonSelect = async (newLogId) => {
+		if (!newLogId || newLogId === 'none') {
+			setComparisonLog(null);
+			return;
+		}
+		const response = await axios.get(`http://localhost:5001/api/logs/${newLogId}/data`);
+		setComparisonLog(response.data);
+	};
+
+	const setZoom = (minutes) => {
+		const chart = chartRef.current;
+		if (!chart || !log || log.data.length < 2) return;
+		const timeDiff = log.data[1].timestamp - log.data[0].timestamp;
+		const pointsPerSecond = timeDiff > 0 ? 1 / timeDiff : 1;
+		const pointsToShow = Math.round(minutes * 60 * pointsPerSecond);
+		const currentMin = Math.round(chart.scales.x.min);
+		const max = Math.min(currentMin + pointsToShow, log.data.length - 1);
+		chart.zoomScale('x', { min: currentMin, max: max }, 'default');
+	};
+	
+	const chartData = useMemo(() => {
+		if (!log) return null;
+		const datasets = [];
+		const activePIDs = selectedPIDs.filter(p => p !== 'none');
+
+		activePIDs.forEach((pid, index) => {
+			datasets.push({
+				label: pid, data: log.data.map(row => row[pid]), borderColor: CHART_COLORS[index], yAxisID: `y${index}`, pointRadius: 0, borderWidth: 2,
+			});
+		});
+
+		if (comparisonLog) {
+			activePIDs.forEach((pid, index) => {
+				datasets.push({
+					label: `${pid} (Comp)`, data: comparisonLog.data.map(row => row[pid]), borderColor: COMPARISON_COLORS[index], borderDash: [5, 5], yAxisID: `y${index}`, pointRadius: 0, borderWidth: 2,
+				});
+			});
+		}
+		return { labels: log.data.map((_, i) => i), datasets };
+	}, [log, selectedPIDs, comparisonLog]);
+
+	const chartOptions = useMemo(() => {
+		const scales = { x: { ticks: { 
+			callback: function(value) {
+				if(log && log.data[value]) {
+					const seconds = log.data[value].timestamp - log.data[0].timestamp;
+					const minutes = Math.floor(seconds / 60);
+					const remSeconds = seconds % 60;
+					return `${minutes}m ${remSeconds}s`;
+				}
+				return value;
+			}
+		}}};
+		
+		const activePIDs = selectedPIDs.filter(p => p !== 'none');
+		activePIDs.forEach((pid, index) => {
+			scales[`y${index}`] = { 
+				type: 'linear', 
+				display: true, 
+				position: index % 2 === 0 ? 'left' : 'right', 
+				grid: { drawOnChartArea: index === 0 }, 
+				ticks: {color: CHART_COLORS[index]},
+				title: { display: true, text: pid.replace(/_/g, ' '), color: CHART_COLORS[index] }
+			};
+		});
+
+		return {
+			responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, animation: false,
+			plugins: {
+				legend: { display: false },
+				zoom: {
+					pan: { enabled: true, mode: 'x', onPanComplete: ({chart}) => setVisibleRange({min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max)}) },
+					zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoomComplete: ({chart}) => setVisibleRange({min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max)}) }
+				}
+			},
+			scales: scales
+		}
+	}, [log]);
+
+	if (!log) return <p className="text-center">Loading log data...</p>;
+	
+	return (
+		<div className="space-y-6">
+			<div className="bg-gray-800 p-4 rounded-lg shadow-xl text-sm">
+				<h2 className="text-xl font-bold text-cyan-400">{log.trip_info.file_name}</h2>
+				<div className="flex flex-wrap gap-x-6 gap-y-2 text-gray-300 mt-2 items-center">
+					<span>Length: <span className="font-mono">{log.data.length} rows</span></span>
+					<span>Trip Start: <span className="font-mono">{new Date(log.data[0].timestamp * 1000).toLocaleString()}</span></span>
+					<span>Duration: <span className="font-mono">{Math.floor(log.trip_info.trip_duration_seconds / 60)}m {Math.round(log.trip_info.trip_duration_seconds % 60)}s</span></span>
+					<span>Distance: <span className="font-mono">{log.trip_info.distance_miles ? log.trip_info.distance_miles.toFixed(2) : 'N/A'} miles</span></span>
+					{log.group_logs.length > 1 && 
+						<div className="flex items-center space-x-2">
+							<span>Group: <Link to={`/trip-groups/${log.trip_info.trip_group_id}`} className="text-cyan-400 hover:underline">[{log.group_logs.length} Logs]</Link></span>
+							<select onChange={(e) => handleComparisonSelect(e.target.value)} className="bg-gray-700 text-white p-1 rounded-md text-xs">
+								<option value="none">-- Compare With --</option>
+								{log.group_logs.filter(gl => gl.log_id !== parseInt(logId)).map(gl => (
+									<option key={gl.log_id} value={gl.log_id}>{new Date(gl.start_timestamp * 1000).toLocaleDateString()}</option>
+								))}
+							</select>
+						</div>
+					}
+				</div>
+			</div>
+
+			<div className="flex items-center space-x-4">
+				{selectedPIDs.map((pid, index) => <PidSelector key={index} color={CHART_COLORS[index]} options={log.columns.filter(c => !['data_id', 'timestamp', 'operating_state'].includes(c))} selectedValue={pid} onChange={(value) => handlePidChange(index, value)} />)}
+			</div>
+
+			<div className="bg-gray-800 rounded-lg shadow-xl p-4 h-[60vh] relative">
+				<Line ref={chartRef} options={chartOptions} data={chartData} />
+				<div className="absolute bottom-4 right-4 flex space-x-2 bg-gray-900/50 p-1 rounded-md">
+					<span className="text-gray-400 text-sm self-center">Zoom:</span>
+					<button onClick={() => setZoom(2)} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">2min</button>
+					<button onClick={() => setZoom(5)} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">5min</button>
+					<button onClick={() => setZoom(10)} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">10min</button>
+					<button onClick={() => chartRef.current.resetZoom()} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">Reset</button>
+				</div>
+			</div>
+
+			<div className="bg-gray-800 rounded-lg shadow-xl p-4 h-[60vh]">
+				<TripMap primaryPath={log.data} comparisonPath={comparisonLog?.data} columns={log.columns} visibleRange={visibleRange} />
+			</div>
+		</div>
+	);
+}
+
+export default LogDetail;
+
+### end LogDetail.js ###
+
+``` potential version regression on this more recent edit : ```
+
+### frontend/src/LogDetail.js ###
+
+// FILE: frontend/src/LogDetail.js
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import axios from 'axios';
+import { Line } from 'react-chartjs-2';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
+import zoomPlugin from 'chartjs-plugin-zoom';
+import TripMap from './TripMap';
+
+ChartJS.register( CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, zoomPlugin );
+
+const CHART_COLORS = [ '#38BDF8', '#F59E0B', '#4ADE80', '#F472B6', '#A78BFA' ];
+const COMPARISON_COLORS = [ '#0284C7', '#B45309', '#16A34A', '#DB2777', '#7C3AED' ];
+
+function PidSelector({ color, options, onChange, selectedValue }) {
+	return (
+		<div className="flex-1 flex items-center bg-gray-700 rounded-md p-2" style={{ borderLeft: `4px solid ${color}`}}>
+			<select value={selectedValue || 'none'} onChange={e => onChange(e.target.value)} className="bg-transparent text-white w-full focus:outline-none text-sm capitalize">
+				<option value="none">-- Select PID --</option>
+				{options.map(opt => <option key={opt} value={opt}>{opt.replace(/_/g, ' ')}</option>)}
+			</select>
+		</div>
+	);
+}
+
+function LogDetail() {
+	const { logId } = useParams();
+	const chartRef = useRef(null);
+	const [log, setLog] = useState(null);
+	const [selectedPIDs, setSelectedPIDs] = useState(['engine_rpm', 'vehicle_speed', 'none', 'none', 'none']);
+	const [comparisonLog, setComparisonLog] = useState(null);
+	const [visibleRange, setVisibleRange] = useState({ min: 0, max: 0 });
+
+	useEffect(() => {
+		const fetchLog = async () => {
+			try {
+				const response = await axios.get(`http://localhost:5001/api/logs/${logId}/data`);
+				setLog(response.data);
+				if (response.data.data.length > 0) {
+					setVisibleRange({ min: 0, max: response.data.data.length - 1 });
+				}
+			} catch (e) { console.error(e); }
+		};
+		fetchLog();
+		setComparisonLog(null);
+	}, [logId]);
+
+	const handlePidChange = (index, value) => {
+		const newPids = [...selectedPIDs];
+		newPids[index] = value === 'none' ? 'none' : value;
+		setSelectedPIDs(newPids);
+	};
+
+	const handleComparisonChange = async (e) => {
+		const newLogId = e.target.value;
+		if (!newLogId || newLogId === 'none') {
+			setComparisonLog(null);
+			return;
+		}
+		const response = await axios.get(`http://localhost:5001/api/logs/${newLogId}/data`);
+		setComparisonLog(response.data);
+	};
+
+	const setZoom = (minutes) => {
+		const chart = chartRef.current;
+		if (!chart || !log || log.data.length < 2) return;
+		const timeDiff = log.data[1].timestamp - log.data[0].timestamp;
+		const pointsPerSecond = timeDiff > 0 ? 1 / timeDiff : 1;
+		const pointsToShow = Math.round(minutes * 60 * pointsPerSecond);
+		const currentMin = Math.round(chart.scales.x.min);
+		const max = Math.min(currentMin + pointsToShow, log.data.length - 1);
+		chart.zoomScale('x', { min: currentMin, max: max }, 'default');
+	};
+	
+	const chartData = useMemo(() => {
+		if (!log) return null;
+		const datasets = [];
+		const activePIDs = selectedPIDs.filter(p => p !== 'none');
+
+		activePIDs.forEach((pid, index) => {
+			datasets.push({
+				label: pid, data: log.data.map(row => row[pid]), borderColor: CHART_COLORS[index], yAxisID: `y${index}`, pointRadius: 0, borderWidth: 2,
+			});
+		});
+
+		if (comparisonLog) {
+			activePIDs.forEach((pid, index) => {
+				datasets.push({
+					label: `${pid} (Comp)`, data: comparisonLog.data.map(row => row[pid]), borderColor: COMPARISON_COLORS[index], borderDash: [5, 5], yAxisID: `y${index}`, pointRadius: 0, borderWidth: 2,
+				});
+			});
+		}
+		return { labels: log.data.map((_, i) => i), datasets };
+	}, [log, selectedPIDs, comparisonLog]);
+
+	const chartOptions = useMemo(() => {
+		const scales = { x: { ticks: { 
+			callback: function(value) {
+				if(log && log.data[value]) {
+					const seconds = log.data[value].timestamp - log.data[0].timestamp;
+					const minutes = Math.floor(seconds / 60);
+					const remSeconds = seconds % 60;
+					return `${minutes}m ${remSeconds}s`;
+				}
+				return value;
+			}
+		}}};
+		
+		const activePIDs = selectedPIDs.filter(p => p !== 'none');
+		activePIDs.forEach((pid, index) => {
+			scales[`y${index}`] = { 
+				type: 'linear', 
+				display: true, 
+				position: index % 2 === 0 ? 'left' : 'right', 
+				grid: { drawOnChartArea: index === 0 }, 
+				ticks: {color: CHART_COLORS[index]},
+				title: { display: true, text: pid.replace(/_/g, ' '), color: CHART_COLORS[index] }
+			};
+		});
+
+		return {
+			responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, animation: false,
+			plugins: {
+				legend: { display: false },
+				zoom: {
+					pan: { enabled: true, mode: 'x', onPanComplete: ({chart}) => setVisibleRange({min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max)}) },
+					zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoomComplete: ({chart}) => setVisibleRange({min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max)}) }
+				}
+			},
+			scales: scales
+		}
+	}, [log]);
+
+	if (!log) return <p className="text-center">Loading log data...</p>;
+	
+	return (
+		<div className="space-y-6">
+			<div className="bg-gray-800 p-4 rounded-lg shadow-xl text-sm">
+				<h2 className="text-xl font-bold text-cyan-400">{log.trip_info.file_name}</h2>
+				<div className="flex flex-wrap gap-x-6 gap-y-2 text-gray-300 mt-2 items-center">
+					<span>Length: <span className="font-mono">{log.data.length} rows</span></span>
+					<span>Trip Start: <span className="font-mono">{new Date(log.data[0].timestamp * 1000).toLocaleString()}</span></span>
+					<span>Duration: <span className="font-mono">{Math.floor(log.trip_info.trip_duration_seconds / 60)}m {Math.round(log.trip_info.trip_duration_seconds % 60)}s</span></span>
+					<span>Distance: <span className="font-mono">{log.trip_info.distance_miles ? log.trip_info.distance_miles.toFixed(2) : 'N/A'} miles</span></span>
+					{log.group_logs.length > 1 && 
+						<div className="flex items-center space-x-2">
+							<span>Group: <Link to={`/trip-groups/${log.trip_info.trip_group_id}`} className="text-cyan-400 hover:underline">[{log.group_logs.length} Logs]</Link></span>
+							<select onChange={handleComparisonChange} className="bg-gray-700 text-white p-1 rounded-md text-xs">
+								<option value="none">-- Compare With --</option>
+								{log.group_logs.filter(gl => gl.log_id !== parseInt(logId)).map(gl => (
+									<option key={gl.log_id} value={gl.log_id}>{new Date(gl.start_timestamp * 1000).toLocaleDateString()}</option>
+								))}
+							</select>
+						</div>
+					}
+				</div>
+			</div>
+
+			<div className="flex items-center space-x-4">
+				{selectedPIDs.map((pid, index) => <PidSelector key={index} color={CHART_COLORS[index]} options={log.columns.filter(c => !['data_id', 'timestamp', 'operating_state'].includes(c))} selectedValue={pid} onChange={(value) => handlePidChange(index, value)} />)}
+			</div>
+
+			<div className="bg-gray-800 rounded-lg shadow-xl p-4 h-[60vh] relative">
+				<Line ref={chartRef} options={chartOptions} data={chartData} />
+				<div className="absolute bottom-4 right-4 flex space-x-2 bg-gray-900/50 p-1 rounded-md">
+					<span className="text-gray-400 text-sm self-center">Zoom:</span>
+					<button onClick={() => setZoom(2)} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">2min</button>
+					<button onClick={() => setZoom(5)} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">5min</button>
+					<button onClick={() => setZoom(10)} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">10min</button>
+					<button onClick={() => chartRef.current.resetZoom()} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">Reset</button>
+				</div>
+			</div>
+
+			<div className="bg-gray-800 rounded-lg shadow-xl p-4 h-[60vh]">
+				<TripMap primaryPath={log.data} comparisonPath={comparisonLog?.data} columns={log.columns} visibleRange={visibleRange} />
+			</div>
+		</div>
+	);
+}
+
+export default LogDetail;
+
+### end LogDetail.js ###
+
+### frontend/src/LogList.js ###
+
+// FILE: frontend/src/LogList.js
+//
+// --- VERSION 1.0.0 ---
+// - This is the new home for the log list component, previously in App.js.
+// - It now uses `useNavigate` from `react-router-dom` to make each row
+//   a clickable link that navigates to the detail page for that log.
+// -----------------------------
+
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+
+function LogList() {
+  const [logs, setLogs] = useState([]);
+  const [status, setStatus] = useState('Loading...');
+  const navigate = useNavigate();
+
+  useEffect(() => {
+	const fetchLogs = async () => {
+	  try {
+		const response = await axios.get('http://localhost:5001/api/logs');
+		setLogs(response.data);
+		if (response.data.length === 0) {
+		  setStatus('No logs found. Add CSV files to the logs folder!');
+		}
+	  } catch (error) {
+		console.error("Error fetching logs:", error);
+		setStatus('Could not connect to the backend. Is the Flask server running?');
+	  }
+	};
+	fetchLogs();
+  }, []);
+
+  const formatTimestamp = (unixTimestamp) => new Date(unixTimestamp * 1000).toLocaleString();
+  const formatDuration = (seconds) => {
+	if (seconds < 0) return '00:00';
+	const minutes = Math.floor(seconds / 60);
+	const remainingSeconds = Math.floor(seconds % 60);
+	return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+  };
+
+  const handleRowClick = (logId) => {
+	navigate(`/logs/${logId}`);
+  };
+
+  return (
+	<div className="bg-gray-800 rounded-lg shadow-xl p-4">
+	  <div className="overflow-x-auto">
+		{logs.length > 0 ? (
+		  <table className="w-full text-left">
+			<thead className="border-b-2 border-cyan-500">
+			  <tr>
+				<th className="p-3">Log File</th>
+				<th className="p-3">Trip Start Time</th>
+				<th className="p-3 text-right">Duration (min:sec)</th>
+			  </tr>
+			</thead>
+			<tbody>
+			  {logs.map((log) => (
+				<tr 
+				  key={log.log_id} 
+				  className="border-b border-gray-700 hover:bg-gray-700/50 cursor-pointer"
+				  onClick={() => handleRowClick(log.log_id)}
+				>
+				  <td className="p-3 font-mono">{log.file_name}</td>
+				  <td className="p-3">{formatTimestamp(log.start_timestamp)}</td>
+				  <td className="p-3 text-right font-mono">{formatDuration(log.trip_duration_seconds)}</td>
+				</tr>
+			  ))}
+			</tbody>
+		  </table>
+		) : (
+		  <p className="text-center text-gray-400 py-8">{status}</p>
+		)}
+	  </div>
+	</div>
+  );
+}
+
+export default LogList;
+
+### end LogList.js ###
+
+### frontend/src/Tools.js ###
+
+// FILE: frontend/src/Tools.js
+
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
+
+function StatCard({ title, value }) {
+	return (
+		<div className="bg-gray-700 p-4 rounded-lg text-center">
+			<p className="text-sm text-gray-400">{title}</p>
+			<p className="text-2xl font-bold text-cyan-400">{value}</p>
+		</div>
+	);
+}
+
+function Tools() {
+	const [sensitivity, setSensitivity] = useState(3);
+	const [preview, setPreview] = useState(null);
+	const [currentStats, setCurrentStats] = useState(null);
+	const [isLoading, setIsLoading] = useState(true);
+	const [applyStatus, setApplyStatus] = useState('');
+
+	const fetchCurrentStats = useCallback(async () => {
+		setIsLoading(true);
+		try {
+			const response = await axios.get('http://localhost:5001/api/trip-groups/summary');
+			setCurrentStats(response.data);
+		} catch (error) {
+			console.error("Error fetching current stats:", error);
+		}
+		setIsLoading(false);
+	}, []);
+
+	useEffect(() => {
+		fetchCurrentStats();
+	}, [fetchCurrentStats]);
+
+	const handlePreview = useCallback(async () => {
+		setIsLoading(true);
+		setApplyStatus('');
+		try {
+			const response = await axios.post('http://localhost:5001/api/trip-groups/preview', { sensitivity });
+			setPreview(response.data);
+		} catch (error) {
+			console.error("Error fetching preview:", error);
+			setPreview({ error: "Could not fetch preview." });
+		}
+		setIsLoading(false);
+	}, [sensitivity]);
+
+	const handleApply = async () => {
+		setIsLoading(true);
+		setApplyStatus('Applying new grouping...');
+		try {
+			const response = await axios.post('http://localhost:5001/api/trips/apply-grouping', { sensitivity });
+			setApplyStatus(response.data.message || 'Grouping applied successfully!');
+			fetchCurrentStats();
+		} catch (error) {
+			setApplyStatus('An error occurred while applying the new grouping.');
+		}
+		setIsLoading(false);
+	};
+
+	return (
+		<div className="bg-gray-800 rounded-lg shadow-xl p-6 space-y-6">
+			<div>
+				<h3 className="text-xl font-semibold">Trip Grouping Sensitivity</h3>
+				<p className="text-gray-400 mt-1 mb-4">
+					Adjust the "fuzziness" for automatic trip grouping. A higher number is more strict (less fuzzy). The default is 3. A lower number is less strict (more fuzzy).
+				</p>
+				<div className="flex items-center space-x-4">
+					<input type="range" min="2" max="5" step="1" value={sensitivity} onChange={(e) => setSensitivity(parseInt(e.target.value))} className="w-64" />
+					<span className="font-mono text-lg">{sensitivity}</span>
+					<button onClick={handlePreview} disabled={isLoading} className="bg-cyan-600 hover:bg-cyan-700 px-4 py-2 rounded-md disabled:opacity-50">
+						{isLoading ? 'Loading...' : 'Preview'}
+					</button>
+					<button onClick={handleApply} disabled={isLoading} className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-md disabled:opacity-50">
+						Apply
+					</button>
+				</div>
+				{applyStatus && <p className="mt-4 text-yellow-400">{applyStatus}</p>}
+			</div>
+
+			<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+				<div>
+					<h4 className="font-bold text-lg mb-2">Current Stats</h4>
+					{currentStats ? (
+						<div className="grid grid-cols-2 gap-4">
+							<StatCard title="Total Groups (>1 trip)" value={currentStats.total_groups} />
+							<StatCard title="Trips in Groups" value={`${currentStats.total_trips_grouped} / ${currentStats.total_logs}`} />
+							<StatCard title="Groups of 2" value={currentStats.group_counts.groups_of_2} />
+							<StatCard title="Groups of 5+" value={currentStats.group_counts.groups_of_5_plus} />
+						</div>
+					) : <p>Loading...</p>}
+				</div>
+				<div>
+					<h4 className="font-bold text-lg mb-2">Preview Stats (Sensitivity: {sensitivity})</h4>
+					{preview ? (
+						<div className="grid grid-cols-2 gap-4">
+							<StatCard title="Total Groups (>1 trip)" value={preview.total_groups} />
+							<StatCard title="Trips in Groups" value={preview.total_trips_grouped} />
+							<StatCard title="Groups of 2" value={preview.group_counts.groups_of_2} />
+							<StatCard title="Groups of 5+" value={preview.group_counts.groups_of_5_plus} />
+						</div>
+					) : <p className="text-gray-400">Press Preview to see results.</p>}
+				</div>
+			</div>
+		</div>
+	);
+}
+
+export default Tools;
+
+### end Tools.js ###
+
+### frontend/src/TripGroupDetail.js ###
+
+// FILE: frontend/src/TripGroupDetail.js
+//
+// --- VERSION 1.9.7-ALPHA ---
+// - FIXED: The `gpsData is not defined` runtime error.
+// ----------------------------
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import axios from 'axios';
+import { Line } from 'react-chartjs-2';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
+import TripMap from './TripMap';
+
+ChartJS.register( CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend );
+
+const CHART_COLORS = [ '#38BDF8', '#F59E0B', '#4ADE80', '#F472B6', '#A78BFA', '#2DD4BF', '#FB7185', '#FACC15', '#818CF8', '#FDE047' ];
+
+function TripGroupDetail() {
+	const { groupId } = useParams();
+	const [groupData, setGroupData] = useState(null);
+	const [availablePIDs, setAvailablePIDs] = useState([]);
+	const [selectedPID, setSelectedPID] = useState('engine_rpm');
+	const [status, setStatus] = useState('Loading group data...');
+
+	useEffect(() => {
+		const fetchGroupData = async () => {
+			try {
+				const response = await axios.get(`http://localhost:5001/api/trip-groups/${groupId}`);
+				setGroupData(response.data);
+
+				const firstLogData = Object.values(response.data.log_data)[0] || [];
+				if (firstLogData.length > 0) {
+					const uniquePids = Object.keys(firstLogData[0] || {}).filter(p => !['data_id', 'timestamp', 'operating_state'].includes(p));
+					setAvailablePIDs(uniquePids.sort());
+				}
+			} catch (error) {
+				console.error("Error fetching group detail:", error);
+				setStatus('Failed to load group data.');
+			}
+		};
+		fetchGroupData();
+	}, [groupId]);
+
+	const chartData = useMemo(() => {
+		if (!groupData || !selectedPID) return null;
+
+		const datasets = groupData.logs.map((log, index) => {
+			const logData = groupData.log_data[log.log_id] || [];
+			return {
+				label: new Date(log.start_timestamp * 1000).toLocaleDateString(),
+				data: logData.map(row => ({
+					x: row.timestamp - log.start_timestamp,
+					y: row[selectedPID]
+				})),
+				borderColor: CHART_COLORS[index % CHART_COLORS.length],
+				backgroundColor: `${CHART_COLORS[index % CHART_COLORS.length]}80`,
+				tension: 0.4,
+				pointRadius: 0,
+				borderWidth: 2,
+			};
+		});
+		return { datasets };
+	}, [groupData, selectedPID]);
+
+	const chartOptions = {
+		responsive: true,
+		maintainAspectRatio: false,
+		interaction: { mode: 'index', intersect: false },
+		plugins: {
+			title: { display: true, text: `Comparison for PID: ${selectedPID}`, color: '#FFFFFF', font: { size: 18 } },
+			legend: { position: 'bottom', labels: { color: '#FFFFFF' } },
+		},
+		scales: {
+			x: { type: 'linear', title: { display: true, text: 'Time since trip start (seconds)', color: '#9CA3AF' }, ticks: { color: '#9CA3AF' } },
+			y: { title: { display: true, text: selectedPID.replace(/_/g, ' '), color: '#9CA3AF' }, ticks: { color: '#9CA3AF' } },
+		},
+	};
+
+	return (
+		<div className="space-y-6">
+			<div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+				<div className="md:col-span-3 bg-gray-800 rounded-lg shadow-xl p-4 h-[70vh]">
+					{chartData ? ( <Line options={chartOptions} data={chartData} /> ) : ( <p className="flex items-center justify-center h-full text-gray-400">{status}</p> )}
+				</div>
+				<div className="md:col-span-1 bg-gray-800 rounded-lg shadow-xl p-4">
+					<h3 className="text-lg font-bold border-b-2 border-cyan-500 pb-2 mb-3">Logs in this Group</h3>
+					<div className="flex flex-col space-y-1 max-h-[30vh] overflow-y-auto">
+						{groupData?.logs.map(log => (
+							<Link key={log.log_id} to={`/logs/${log.log_id}`} className="text-left p-2 rounded-md text-sm hover:bg-gray-700 text-cyan-400">
+								{log.file_name}
+							</Link>
+						))}
+					</div>
+					<h3 className="text-lg font-bold border-b-2 border-cyan-500 pb-2 my-3">Select PID to Compare</h3>
+					<div className="flex flex-col space-y-1 max-h-[30vh] overflow-y-auto">
+						{availablePIDs.map(pid => (
+							<button key={pid} onClick={() => setSelectedPID(pid)} className={`text-left p-2 rounded-md text-sm ${selectedPID === pid ? 'bg-cyan-600 font-bold' : 'hover:bg-gray-700'}`}>
+								{pid.replace(/_/g, ' ')}
+							</button>
+						))}
+					</div>
+				</div>
+			</div>
+			{groupData && groupData.gps_data && (
+				<div className="bg-gray-800 rounded-lg shadow-xl p-4 h-[60vh]">
+					<TripMap 
+						positions={Object.values(groupData.gps_data)} 
+						multiRoute={true} 
+						columns={['latitude', 'longitude', 'operating_state']} // Pass a generic columns array
+						labels={groupData.logs.map(l => new Date(l.start_timestamp * 1000).toLocaleDateString())}
+					/>
+				</div>
+			)}
+		</div>
+	);
+}
+
+export default TripGroupDetail;
+
+### end TripGroupDetail.js ###
+
+``` another file with a version regress ```
+
+### frontend/src/TripGroupDetail.js ###
+
+// FILE: frontend/src/TripGroupDetail.js
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import axios from 'axios';
+import { Line } from 'react-chartjs-2';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
+import TripMap from './TripMap';
+
+ChartJS.register( CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend );
+
+const CHART_COLORS = [ '#38BDF8', '#F59E0B', '#4ADE80', '#F472B6', '#A78BFA', '#2DD4BF', '#FB7185', '#FACC15', '#818CF8', '#FDE047' ];
+
+function TripGroupDetail() {
+	const { groupId } = useParams();
+	const [groupData, setGroupData] = useState(null);
+	const [availablePIDs, setAvailablePIDs] = useState([]);
+	const [selectedPID, setSelectedPID] = useState('engine_rpm');
+	const [status, setStatus] = useState('Loading group data...');
+
+	useEffect(() => {
+		const fetchGroupData = async () => {
+			try {
+				const response = await axios.get(`http://localhost:5001/api/trip-groups/${groupId}`);
+				setGroupData(response.data);
+
+				const firstLogData = Object.values(response.data.log_data)[0] || [];
+				if (firstLogData.length > 0) {
+					const uniquePids = Object.keys(firstLogData[0] || {}).filter(p => !['data_id', 'timestamp', 'operating_state'].includes(p));
+					setAvailablePIDs(uniquePids.sort());
+				}
+			} catch (error) {
+				console.error("Error fetching group detail:", error);
+				setStatus('Failed to load group data.');
+			}
+		};
+		fetchGroupData();
+	}, [groupId]);
+
+	const chartData = useMemo(() => {
+		if (!groupData || !selectedPID) return null;
+
+		const datasets = groupData.logs.map((log, index) => {
+			const logData = groupData.log_data[log.log_id] || [];
+			return {
+				label: new Date(log.start_timestamp * 1000).toLocaleDateString(),
+				data: logData.map(row => ({
+					x: row.timestamp - log.start_timestamp,
+					y: row[selectedPID]
+				})),
+				borderColor: CHART_COLORS[index % CHART_COLORS.length],
+				backgroundColor: `${CHART_COLORS[index % CHART_COLORS.length]}80`,
+				tension: 0.4,
+				pointRadius: 0,
+				borderWidth: 2,
+			};
+		});
+		return { datasets };
+	}, [groupData, selectedPID]);
+
+	const chartOptions = {
+		responsive: true,
+		maintainAspectRatio: false,
+		interaction: { mode: 'index', intersect: false },
+		plugins: {
+			title: { display: true, text: `Comparison for PID: ${selectedPID}`, color: '#FFFFFF', font: { size: 18 } },
+			legend: { position: 'bottom', labels: { color: '#FFFFFF' } },
+		},
+		scales: {
+			x: { type: 'linear', title: { display: true, text: 'Time since trip start (seconds)', color: '#9CA3AF' }, ticks: { color: '#9CA3AF' } },
+			y: { title: { display: true, text: selectedPID.replace(/_/g, ' '), color: '#9CA3AF' }, ticks: { color: '#9CA3AF' } },
+		},
+	};
+
+	return (
+		<div className="space-y-6">
+			<div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+				<div className="md:col-span-3 bg-gray-800 rounded-lg shadow-xl p-4 h-[70vh]">
+					{chartData ? ( <Line options={chartOptions} data={chartData} /> ) : ( <p className="flex items-center justify-center h-full text-gray-400">{status}</p> )}
+				</div>
+				<div className="md:col-span-1 bg-gray-800 rounded-lg shadow-xl p-4">
+					<h3 className="text-lg font-bold border-b-2 border-cyan-500 pb-2 mb-3">Logs in this Group</h3>
+					<div className="flex flex-col space-y-1 max-h-[30vh] overflow-y-auto">
+						{groupData?.logs.map(log => (
+							<Link key={log.log_id} to={`/logs/${log.log_id}`} className="text-left p-2 rounded-md text-sm hover:bg-gray-700 text-cyan-400">
+								{log.file_name}
+							</Link>
+						))}
+					</div>
+					<h3 className="text-lg font-bold border-b-2 border-cyan-500 pb-2 my-3">Select PID to Compare</h3>
+					<div className="flex flex-col space-y-1 max-h-[30vh] overflow-y-auto">
+						{availablePIDs.map(pid => (
+							<button key={pid} onClick={() => setSelectedPID(pid)} className={`text-left p-2 rounded-md text-sm ${selectedPID === pid ? 'bg-cyan-600 font-bold' : 'hover:bg-gray-700'}`}>
+								{pid.replace(/_/g, ' ')}
+							</button>
+						))}
+					</div>
+				</div>
+			</div>
+			{groupData && groupData.gps_data && (
+				<div className="bg-gray-800 rounded-lg shadow-xl p-4 h-[60vh]">
+					<TripMap 
+						positions={Object.values(groupData.gps_data)} 
+						multiRoute={true} 
+						labels={groupData.logs.map(l => new Date(l.start_timestamp * 1000).toLocaleDateString())}
+					/>
+				</div>
+			)}
+		</div>
+	);
+}
+
+export default TripGroupDetail;
+
+## end TripGroupDetail.js ###
+
+### frontend/src/TripGroupList.js ###
+
+// FILE: frontend/src/TripGroupList.js
+//
+// --- VERSION 1.5.0 ---
+// - This is a new page component that fetches and displays a list of all
+//   trip groups that have more than one trip.
+// - Each group is a clickable link to the comparison view.
+// -----------------------------
+
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+
+function TripGroupList() {
+	const [groups, setGroups] = useState([]);
+	const [status, setStatus] = useState('Loading trip groups...');
+	const navigate = useNavigate();
+
+	useEffect(() => {
+		const fetchGroups = async () => {
+			try {
+				const response = await axios.get('http://localhost:5001/api/trip-groups');
+				setGroups(response.data);
+				if (response.data.length === 0) {
+					setStatus('No trip groups found. Run the grouping script or add more logs with similar start/end points.');
+				}
+			} catch (error) {
+				console.error("Error fetching trip groups:", error);
+				setStatus('Could not connect to the backend.');
+			}
+		};
+		fetchGroups();
+	}, []);
+
+	const handleGroupClick = (groupId) => {
+		navigate(`/trip-groups/${groupId}`);
+	};
+	
+	// A simple function to create a human-readable name for a group
+	const getGroupName = (group) => {
+		const lat1 = parseFloat(group.avg_start_lat).toFixed(2);
+		const lon1 = parseFloat(group.avg_start_lon).toFixed(2);
+		const lat2 = parseFloat(group.avg_end_lat).toFixed(2);
+		const lon2 = parseFloat(group.avg_end_lon).toFixed(2);
+		return `Trip from (${lat1}, ${lon1}) to (${lat2}, ${lon2})`;
+	};
+
+	return (
+		<div className="bg-gray-800 rounded-lg shadow-xl p-4">
+			<h2 className="text-2xl font-bold mb-4 text-cyan-400">Recurring Trip Groups</h2>
+			<div className="overflow-x-auto">
+				{groups.length > 0 ? (
+					<table className="w-full text-left">
+						<thead className="border-b-2 border-cyan-500">
+							<tr>
+								<th className="p-3">Trip Route</th>
+								<th className="p-3 text-right">Number of Trips</th>
+							</tr>
+						</thead>
+						<tbody>
+							{groups.map((group) => (
+								<tr 
+									key={group.trip_group_id} 
+									className="border-b border-gray-700 hover:bg-gray-700/50 cursor-pointer"
+									onClick={() => handleGroupClick(group.trip_group_id)}
+								>
+									<td className="p-3 font-mono">{getGroupName(group)}</td>
+									<td className="p-3 text-right font-mono">{group.trip_count}</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				) : (
+					<p className="text-center text-gray-400 py-8">{status}</p>
+				)}
+			</div>
+		</div>
+	);
+}
+
+export default TripGroupList;
+
+### end TripGroupList.js ###
+
+### frontend/src/TripMap.js ###
+
+// FILE: frontend/src/TripMap.js
+//
+// --- VERSION 1.9.7-ALPHA ---
+// - FIXED: Removed unused `Tooltip` import to resolve console warning.
+// ---------------------------
+
+import React, { useEffect } from 'react';
+import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+
+const STATE_COLORS = { "Closed Loop (Idle)": "#34D399", "Closed Loop (City)": "#60A5FA", "Closed Loop (Highway)": "#38BDF8", "Open Loop (WOT Accel)": "#F87171", "Open Loop (Decel Fuel Cut)": "#FBBF24", "Open Loop (Cold Start)": "#A78BFA", "default": "#9CA3AF" };
+const COMPARISON_COLOR = "#6B7280";
+
+const CHART_COLORS = [ '#38BDF8', '#F59E0B', '#4ADE80', '#F472B6', '#A78BFA', '#2DD4BF', '#FB7185', '#FACC15', '#818CF8', '#FDE047' ];
+
+function MapController({ bounds }) {
+	const map = useMap();
+	useEffect(() => {
+		if (bounds && bounds.length === 2 && bounds[0][0] !== Infinity) {
+			map.fitBounds(bounds, { padding: [50, 50] });
+		}
+	}, [bounds, map]);
+	return null;
+}
+
+function TripMap({ primaryPath, comparisonPath, columns, visibleRange, multiRoute = false, labels = [] }) {
+	const latCol = columns.find(c => c.includes('latitude'));
+	const lonCol = columns.find(c => c.includes('longitude'));
+
+	const getPathSegments = (path) => {
+		if (!path || !latCol || !lonCol) return [];
+		const segments = [];
+		let currentSegment = { color: STATE_COLORS.default, points: [] };
+		path.forEach(row => {
+			const stateColor = STATE_COLORS[row.operating_state] || STATE_COLORS.default;
+			const point = [row[latCol], row[lonCol]];
+			if (point[0] && point[1] && point[0] !== 0) {
+				if (stateColor !== currentSegment.color && currentSegment.points.length > 0) {
+					segments.push(currentSegment);
+					currentSegment = { color: stateColor, points: [currentSegment.points[currentSegment.points.length - 1]] };
+				}
+				currentSegment.color = stateColor;
+				currentSegment.points.push(point);
+			}
+		});
+		if (currentSegment.points.length > 1) segments.push(currentSegment);
+		return segments;
+	};
+	
+	const getBounds = () => {
+		if (multiRoute) {
+			const allPoints = primaryPath.flat().filter(p => p[0] && p[1] && p[0] !== 0);
+			if (allPoints.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
+			const latitudes = allPoints.map(p => p[0]);
+			const longitudes = allPoints.map(p => p[1]);
+			return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
+		}
+		
+		const path = primaryPath.slice(visibleRange.min, visibleRange.max + 1);
+		const points = path.map(row => [row[latCol], row[lonCol]]).filter(p => p[0] && p[1] && p[0] !== 0);
+		if (points.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
+		const latitudes = points.map(p => p[0]);
+		const longitudes = points.map(p => p[1]);
+		return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
+	};
+
+	const bounds = getBounds();
+	const primarySegments = multiRoute ? [] : getPathSegments(primaryPath);
+	const comparisonSegments = comparisonPath ? getPathSegments(comparisonPath) : [];
+
+	return (
+		<MapContainer bounds={bounds} style={{ height: '100%', width: '100%', backgroundColor: '#1F2937', borderRadius: '0.5rem' }}>
+			<MapController bounds={bounds} />
+			<TileLayer url="https://{s}[.basemaps.cartocdn.com/dark_all/](https://.basemaps.cartocdn.com/dark_all/){z}/{x}/{y}{r}.png" />
+			
+			{multiRoute ? (
+				primaryPath.map((path, index) => (
+					<Polyline key={`multi-${index}`} positions={path.map(p => [p.latitude, p.longitude])} color={CHART_COLORS[index % CHART_COLORS.length]} />
+				))
+			) : (
+				<>
+					{comparisonPath && comparisonSegments.map((segment, index) => <Polyline key={`comp-${index}`} positions={segment.points} color={COMPARISON_COLOR} weight={5} opacity={0.6} dashArray="5, 10" />)}
+					{primarySegments.map((segment, index) => <Polyline key={index} positions={segment.points} color={segment.color} weight={5} />)}
+				</>
+			)}
+		</MapContainer>
+	);
+}
+
+export default TripMap;
+
+### end TripMap.js ###
+
+``` I believe this was the last file with a version regression ```
+
+### frontend/src/TripMap.js ###
+
+// FILE: frontend/src/TripMap.js
+
+import React, { useEffect } from 'react';
+import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+
+const STATE_COLORS = { "Closed Loop (Idle)": "#34D399", "Closed Loop (City)": "#60A5FA", "Closed Loop (Highway)": "#38BDF8", "Open Loop (WOT Accel)": "#F87171", "Open Loop (Decel Fuel Cut)": "#FBBF24", "Open Loop (Cold Start)": "#A78BFA", "default": "#9CA3AF" };
+const COMPARISON_COLOR = "#6B7280";
+
+function MapController({ bounds }) {
+	const map = useMap();
+	useEffect(() => {
+		if (bounds && bounds.length === 2 && bounds[0][0] !== Infinity) {
+			map.fitBounds(bounds, { padding: [50, 50] });
+		}
+	}, [bounds, map]);
+	return null;
+}
+
+function TripMap({ primaryPath, comparisonPath, columns, visibleRange, multiRoute = false, labels = [] }) {
+	const latCol = columns.find(c => c.includes('latitude'));
+	const lonCol = columns.find(c => c.includes('longitude'));
+
+	const getPathSegments = (path) => {
+		if (!path || !latCol || !lonCol) return [];
+		const segments = [];
+		let currentSegment = { color: STATE_COLORS.default, points: [] };
+		path.forEach(row => {
+			const stateColor = STATE_COLORS[row.operating_state] || STATE_COLORS.default;
+			const point = [row[latCol], row[lonCol]];
+			if (point[0] && point[1] && point[0] !== 0) {
+				if (stateColor !== currentSegment.color && currentSegment.points.length > 0) {
+					segments.push(currentSegment);
+					currentSegment = { color: stateColor, points: [currentSegment.points[currentSegment.points.length - 1]] };
+				}
+				currentSegment.color = stateColor;
+				currentSegment.points.push(point);
+			}
+		});
+		if (currentSegment.points.length > 1) segments.push(currentSegment);
+		return segments;
+	};
+	
+	const getBounds = () => {
+		if (multiRoute) {
+			const allPoints = primaryPath.flat().filter(p => p[0] && p[1] && p[0] !== 0);
+			if (allPoints.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
+			const latitudes = allPoints.map(p => p[0]);
+			const longitudes = allPoints.map(p => p[1]);
+			return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
+		}
+		
+		const path = primaryPath.slice(visibleRange.min, visibleRange.max + 1);
+		const points = path.map(row => [row[latCol], row[lonCol]]).filter(p => p[0] && p[1] && p[0] !== 0);
+		if (points.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
+		const latitudes = points.map(p => p[0]);
+		const longitudes = points.map(p => p[1]);
+		return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
+	};
+
+	const bounds = getBounds();
+	const primarySegments = multiRoute ? [] : getPathSegments(primaryPath);
+	const comparisonSegments = comparisonPath ? getPathSegments(comparisonPath) : [];
+
+	return (
+		<MapContainer bounds={bounds} style={{ height: '100%', width: '100%', backgroundColor: '#1F2937', borderRadius: '0.5rem' }}>
+			<MapController bounds={bounds} />
+			<TileLayer url="https://{s}[.basemaps.cartocdn.com/dark_all/](https://.basemaps.cartocdn.com/dark_all/){z}/{x}/{y}{r}.png" />
+			
+			{multiRoute ? (
+				primaryPath.map((path, index) => (
+					<Polyline key={`multi-${index}`} positions={path.map(p => [p.latitude, p.longitude])} color={CHART_COLORS[index % CHART_COLORS.length]} />
+				))
+			) : (
+				<>
+					{comparisonPath && comparisonSegments.map((segment, index) => <Polyline key={`comp-${index}`} positions={segment.points} color={COMPARISON_COLOR} weight={5} opacity={0.6} dashArray="5, 10" />)}
+					{primarySegments.map((segment, index) => <Polyline key={index} positions={segment.points} color={segment.color} weight={5} />)}
+				</>
+			)}
+		</MapContainer>
+	);
+}
+
+export default TripMap;
+
+### End TripMap.js ###
+
+
+``` the following is one example log file ```
+
+### logs/CSVLog_20250811_200318.csv ###
+
+# StartTime = 08/11/2025 08:03:22.3271 PM
+Time (sec), Fuel system 1 status, Calculated load value (%), Engine coolant temperature (°F), Short term fuel % trim - Bank 1 (%), Long term fuel % trim - Bank 1 (%), Intake manifold absolute pressure (psi), Engine RPM (RPM), Vehicle speed (MPH), Ignition timing advance for #1 cylinder (deg), Intake air temperature (°F), Absolute throttle position (%), O2 voltage (Bank 1  Sensor 1) (V), Instant Fuel Economy (MPG), Total Fuel Economy (MPG), Fuel Rate (gal/hr), Trip Distance (miles), Trip Fuel (gal), Latitude (deg), Longitude (deg), GPS Speed (MPH), Adapter voltage (V), PID refresh rate (Hz)
+0.000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,44.9538,-93.40082,73.304405,0,0
+4.020,0,0,177.8,0,-4.6875,9.427453,2177,70.98544,35,111.2,0,0.68,0,0,0,0,0,44.952614,-93.40076,73.57283,15.5,0
+7.327,2,23.529411,177.8,-5.46875,-5.46875,8.267151,2189,71.61924,32.5,111.2,26.27451,0.68,18.042456,0,0,0.089628235,0,44.95173,-93.4007,73.662315,15.6,0.64684683
+10.530,2,30.588236,177.8,2.34375,-4.6875,10.732793,2193.75,71.61924,28,111.2,27.843138,0.34,13.821381,15.189097,5.1817718,0.17131737,0.005920677,44.950848,-93.40066,73.14782,15.6,1.1222824
+13.828,2,32.156864,177.8,0,-4.6875,11.022868,2192.75,71.61924,25.5,111.2,28.62745,0.68,13.428521,15.189076,5.333368,0.2346325,0.010625293,44.94966,-93.40062,73.86364,15.5,1.5846964
+17.375,2,23.137255,177.8,0,-7.8125,11.022868,2207,71.61924,39,111.2,18.82353,0.78,13.434646,15.1890545,5.3309364,0.3009179,0.015547626,44.948788,-93.400635,72.85702,15.5,1.874186
+20.611,2,11.764706,177.8,-5.46875,-18.75,4.49617,2183.75,71.61924,19,113,14.90196,0.84,32.72389,15.189143,2.1885922,0.36422125,0.01748121,44.947937,-93.40059,70.540855,15.5,2.175943
+23.882,2,13.725491,177.8,-7.8125,-10.9375,4.7862453,2176.75,69.084045,40,113,16.862745,0.8,30.062654,15.189234,2.2980022,0.43428665,0.019798854,44.94682,-93.40056,69.51813,15.5,2.3587263
+27.177,2,18.039215,177.8,-0.78125,-8.59375,6.816774,2072,68.45025,38.5,113,19.607843,0.46,20.981428,15.189277,3.2624211,0.49360293,0.022633553,44.945988,-93.40056,68.75472,15.4,2.5596018
+30.841,2,26.27451,177.8,-7.03125,-6.25,7.106849,2054.75,67.81645,23,113,29.80392,0.04,20.946701,15.189322,3.237572,0.55700606,0.025653603,44.94483,-93.400536,72.20872,15.4,2.6546535
+34.110,2,27.058823,177.8,0.78125,-6.25,11.167906,2113.75,69.084045,33.5,116.6,24.705883,0.62,13.69287,15.189304,5.045257,0.6185295,0.030142102,44.943947,-93.40025,74.44048,15.5,2.7787147
+37.416,2,31.37255,177.8,-1.5625,-6.25,8.847302,2215.25,72.253044,26,116.6,29.411764,0.16,17.683191,15.189333,4.085973,0.69389373,0.034398478,44.943085,-93.399765,77.16846,15.5,2.8347912
+
+### end CSVLog_20250811_200318.csv ###
+
+``` further program logging at program_logs/ and backend/program_logs/ I'm not sure if the second directory was intentional as those logs appear to be just the one-time-use tool logging, and the first folder is the logs that match whats shown in the terminal with the server running```

@@ -1,12 +1,4 @@
 # FILE: backend/group_trips.py
-#
-# --- VERSION 1.9.7-ALPHA ---
-# - This is the complete, corrected, and fully implemented file.
-# - It uses the optimized `get_first/last_valid_coord` methods from the
-#   db_manager to ensure high performance.
-# - It correctly uses `INSERT ... ON DUPLICATE KEY UPDATE` to be safely
-#   re-runnable.
-# -----------------------------
 
 import logging
 import sys
@@ -41,6 +33,14 @@ def generate_group_id(lat1, lon1, lat2, lon2, sensitivity=3):
 		return hashlib.sha256(s.encode()).hexdigest()
 	except (ValueError, TypeError):
 		return None
+
+def find_first_valid_coords(data_rows, lat_pid, lon_pid):
+	for row in data_rows:
+		lat = float(row.get(lat_pid, 0))
+		lon = float(row.get(lon_pid, 0))
+		if lat != 0 and lon != 0:
+			return lat, lon
+	return None, None
 
 def group_trips_logic(preview_mode=False, sensitivity=3):
 	logger = logging.getLogger(__name__)
@@ -104,7 +104,7 @@ def group_trips_logic(preview_mode=False, sensitivity=3):
 def main():
 	setup_logging()
 	logger = logging.getLogger(__name__)
-	logger.info("--- Starting Trip Grouping Process (v1.9.7-ALPHA) ---")
+	logger.info("--- Starting Trip Grouping Process (v1.9.0) ---")
 	group_trips_logic()
 	logger.info("--- Trip Grouping Process Finished ---")
 
