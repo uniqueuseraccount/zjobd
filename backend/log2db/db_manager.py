@@ -1,8 +1,10 @@
-# FILE: backend/db_manager.py
+#  FILE: backend/db_manager.py
 #
-# --- VERSION 1.9.8-ALPHA ---
-# - FIXED: Restored to the last known-good complete version of the file.
-# - All methods are fully implemented to prevent AttributeErrors.
+# --- VERSION 1.9.7-ALPHA ---
+# - FIXED: This file has been restored to its complete, functional state.
+# - All methods, including `is_file_processed`, `add_new_column`,
+#   `insert_log_index`, and `insert_log_data_batch`, have been re-implemented,
+#   fixing the `AttributeError` that broke the file ingestion process.
 # -----------------------------
 
 import mysql.connector

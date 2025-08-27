@@ -1,9 +1,8 @@
 // FILE: frontend/src/App.js
 //
-// --- VERSION 1.8.5 ALPHA ---
+// --- VERSION 1.8.0 ---
 // - Added new route for the "Tools" page.
 // - Added a navigation link to the new "Tools" page in the header.
-// - Added leaflet.css
 // -----------------------------
 
 import React from 'react';
@@ -13,7 +12,6 @@ import LogDetail from './LogDetail';
 import TripGroupList from './TripGroupList';
 import TripGroupDetail from './TripGroupDetail';
 import Tools from './Tools'; // New
-import 'leaflet/dist/leaflet.css';
 
 function App() {
   return (
