@@ -1,10 +1,4 @@
 # FILE: backend/app.py
-#
-# --- VERSION 1.9.4-ALPHA ---
-# - FIXED: Corrected ambiguous column name `trip_duration_seconds` in the SQL 
-#   query within the get_log_data function.
-# - INFO: This version is a consolidated and corrected version of the app.py file.
-# -----------------------------
 
 import os
 import time
@@ -72,37 +66,26 @@ def get_logs():
 
 @app.route('/api/logs/<int:log_id>/data', methods=['GET'])
 def get_log_data(log_id):
-    db_manager = DatabaseManager(DB_CONFIG)
-    try:
-        # We need the normalized_names to build the PID dropdown correctly
-        log_data, columns, statistics, normalized_names = db_manager.get_data_for_log(log_id)
-        
-        # Also fetch the trip_info which has the filename and timestamps
-        trip_info = db_manager.fetch_one("""
-            SELECT li.file_name, t.trip_group_id, t.distance_miles, li.start_timestamp, li.trip_duration_seconds 
-            FROM log_index li 
-            LEFT JOIN trips t ON li.log_id = t.log_id 
-            WHERE li.log_id = %s
-        """, (log_id,))
-        
-        group_logs = []
-        if trip_info and trip_info.get('trip_group_id'):
-            group_logs = db_manager.get_logs_for_trip_group(trip_info['trip_group_id'])
+	db_manager = DatabaseManager(DB_CONFIG)
+	try:
+		log_data, columns, statistics, _ = db_manager.get_data_for_log(log_id)
+		trip_info = db_manager.fetch_one("SELECT file_name, trip_group_id, distance_miles, trip_duration_seconds FROM log_index li LEFT JOIN trips t ON li.log_id = t.log_id WHERE li.log_id = %s", (log_id,))
+		group_logs = []
+		if trip_info and trip_info.get('trip_group_id'):
+			group_logs = db_manager.get_logs_for_trip_group(trip_info['trip_group_id'])
 
-        # --- FIX: Send a consistent, complete payload ---
-        return jsonify({
-            "data": log_data, 
-            "columns": columns, 
-            "statistics": statistics,
-            "trip_info": trip_info,
-            "group_logs": group_logs,
-            "normalized_names": normalized_names # This was missing
-        })
-    except Exception as e:
-        app.logger.error(f"Error fetching data for log_id {log_id}: {e}", exc_info=True)
-        return jsonify({"error": "Could not fetch log data"}), 500
-    finally:
-        db_manager.close()
+		return jsonify({
+			"data": log_data, 
+			"columns": columns, 
+			"statistics": statistics,
+			"trip_info": trip_info,
+			"group_logs": group_logs
+		})
+	except Exception as e:
+		app.logger.error(f"Error fetching data for log_id {log_id}: {e}", exc_info=True)
+		return jsonify({"error": "Could not fetch log data"}), 500
+	finally:
+		db_manager.close()
 
 @app.route('/api/trip-groups', methods=['GET'])
 def get_trip_groups():
@@ -112,43 +95,25 @@ def get_trip_groups():
 	finally:
 		db_manager.close()
 
-# In backend/app.py
-
 @app.route('/api/trip-groups/<group_id>', methods=['GET'])
 def get_trip_group_detail(group_id):
-    db_manager = DatabaseManager(DB_CONFIG)
-    try:
-        logs = db_manager.get_logs_for_trip_group(group_id)
-        
-        all_log_data = {}
-        all_columns_map = {}
-        all_pids = set()
-        all_normalized_names = {} # We need this for the frontend
+	db_manager = DatabaseManager(DB_CONFIG)
+	try:
+		logs = db_manager.get_logs_for_trip_group(group_id)
+		gps_data_map = {}
+		log_data_map = {}
+		for log in logs:
+			log_id = log['log_id']
+			data, _, _, _ = db_manager.get_data_for_log(log_id)
+			log_data_map[log_id] = data
+			gps_data_map[log_id] = [d for d in data if d.get('latitude') and d.get('longitude')]
 
-        for log in logs:
-            log_id = log['log_id']
-            data, columns, _, normalized_names = db_manager.get_data_for_log(log_id)
-            
-            all_log_data[log_id] = data
-            all_columns_map[log_id] = columns
-            all_normalized_names[log_id] = normalized_names
-            
-            # Use the original (normalized) names for the combined PID list for dropdowns
-            for original_name in normalized_names.values():
-                all_pids.add(original_name)
-
-        return jsonify({
-            "logs": logs, 
-            "all_data": all_log_data,
-            "all_columns": all_columns_map,
-            "combined_pids": sorted(list(all_pids)),
-            "normalized_names": all_normalized_names, # Add this to the response
-        })
-    except Exception as e:
-        app.logger.error(f"Error fetching data for trip group {group_id}: {e}", exc_info=True)
-        return jsonify({"error": "Could not fetch trip group data"}), 500
-    finally:
-        db_manager.close()
+		return jsonify({"logs": logs, "gps_data": gps_data_map, "log_data": log_data_map})
+	except Exception as e:
+		app.logger.error(f"Error fetching data for trip group {group_id}: {e}", exc_info=True)
+		return jsonify({"error": "Could not fetch trip group data"}), 500
+	finally:
+		db_manager.close()
 
 @app.route('/api/trip-groups/summary', methods=['GET'])
 def get_trip_group_summary():
@@ -207,7 +172,7 @@ if __name__ == '__main__':
 		sys.exit(1)
 	finally:
 		startup_db_manager.close()
-	
+
 	watcher_thread = Thread(target=start_watcher, daemon=True)
 	watcher_thread.start()
 	
