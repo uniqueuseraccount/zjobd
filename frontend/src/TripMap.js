@@ -48,30 +48,38 @@ function TripMap({ primaryPath, comparisonPath, columns, visibleRange, multiRout
 	};
 	
 	const getBounds = () => {
-		if (multiRoute) {
-			const allPoints = primaryPath.flat().filter(p => p[0] && p[1] && p[0] !== 0);
-			if (allPoints.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
-			const latitudes = allPoints.map(p => p[0]);
-			const longitudes = allPoints.map(p => p[1]);
-			return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
-		}
-		
-		const path = primaryPath.slice(visibleRange.min, visibleRange.max + 1);
-		const points = path.map(row => [row[latCol], row[lonCol]]).filter(p => p[0] && p[1] && p[0] !== 0);
-		if (points.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
-		const latitudes = points.map(p => p[0]);
-		const longitudes = points.map(p => p[1]);
-		return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
+    	if (!primaryPath) return [[44.97, -93.26], [44.98, -93.27]];
+
+    	if (multiRoute) {
+        	const allPoints = Array.isArray(primaryPath) && typeof primaryPath.flat === 'function'
+            	? primaryPath.flat().filter(p => p[0] && p[1] && p[0] !== 0)
+            	: [];
+        	if (allPoints.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
+        		const latitudes = allPoints.map(p => p[0]);
+        		const longitudes = allPoints.map(p => p[1]);
+        	return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
+    	}
+
+    	const path = primaryPath.slice(visibleRange?.min ?? 0, (visibleRange?.max ?? primaryPath.length - 1) + 1);
+    	const points = path.map(row => [row[latCol], row[lonCol]]).filter(p => p[0] && p[1] && p[0] !== 0);
+    	if (points.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
+    		const latitudes = points.map(p => p[0]);
+    		const longitudes = points.map(p => p[1]);
+    	return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
 	};
+
 
 	const bounds = getBounds();
 	const primarySegments = multiRoute ? [] : getPathSegments(primaryPath);
 	const comparisonSegments = comparisonPath ? getPathSegments(comparisonPath) : [];
 
+
+
+
 	return (
-		<MapContainer bounds={bounds} style={{ height: '100%', width: '100%', backgroundColor: '#1F2937', borderRadius: '0.5rem' }}>
+			<MapContainer bounds={bounds} style={{ height: '100%', width: '100%', backgroundColor: '#1F2937', borderRadius: '0.5rem' }}>
 			<MapController bounds={bounds} />
-			<TileLayer url="https://{s}[.basemaps.cartocdn.com/dark_all/](https://.basemaps.cartocdn.com/dark_all/){z}/{x}/{y}{r}.png" />
+			<TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
 			
 			{multiRoute ? (
 				primaryPath.map((path, index) => (
