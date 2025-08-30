@@ -67,25 +67,32 @@ function LogDetail() {
 		setComparisonLog(response.data);
 	};
 
-	const setZoom = (minutes) => {
-		const chart = chartRef.current;
-		if (!chart || !log || log.data.length < 2) return;
-		const timeDiff = log.data[1].timestamp - log.data[0].timestamp;
-		const pointsPerSecond = timeDiff > 0 ? 1 / timeDiff : 1;
-		const pointsToShow = Math.round(minutes * 60 * pointsPerSecond);
-		const currentMin = Math.round(chart.scales.x.min);
-		const max = Math.min(currentMin + pointsToShow, log.data.length - 1);
-		chart.zoomScale('x', { min: currentMin, max: max }, 'default');
-	};
-	
-	const handleMapBoundsRangeChange = ({ min, max }) => {
-		if (!chartRef.current) return;
-		syncingRef.current = true;
-		chartRef.current.zoomScale('x', { min, max }, 'default');
-		setVisibleRange({ min, max });
-		// release after chart applies
-		setTimeout(() => { syncingRef.current = false; }, 0);
-	};
+	// Add this near the top of LogDetail, before setZoom:
+const syncingRef = useRef(false);
+
+const setZoom = (minutes) => {
+  if (!chartRef.current || !log || log.data.length < 2) return;
+  const chart = chartRef.current;
+  const timeDiff = log.data[1].timestamp - log.data[0].timestamp;
+  const pointsPerSecond = timeDiff > 0 ? 1 / timeDiff : 1;
+  const pointsToShow = Math.round(minutes * 60 * pointsPerSecond);
+  const currentMin = Math.round(chart.scales.x.min);
+  const max = Math.min(currentMin + pointsToShow, log.data.length - 1);
+
+  syncingRef.current = true; // prevent map from snapping back
+  chart.zoomScale('x', { min: currentMin, max }, 'default');
+  setVisibleRange({ min: currentMin, max });
+  setTimeout(() => { syncingRef.current = false; }, 0);
+};
+
+const handleMapBoundsRangeChange = ({ min, max }) => {
+  if (!chartRef.current) return;
+  syncingRef.current = true; // prevent chart from triggering map update back
+  chartRef.current.zoomScale('x', { min, max }, 'default');
+  setVisibleRange({ min, max });
+  setTimeout(() => { syncingRef.current = false; }, 0);
+};
+
 
 	const chartData = useMemo(() => {
 		if (!log) return null;
@@ -120,9 +127,6 @@ function LogDetail() {
 
   return { labels: log.data.map((_, i) => i), datasets };
 }, [log, selectedPIDs, comparisonLog]);
-
-
-const syncingRef = useRef(false);
 
 const chartOptions = useMemo(() => {
   const scales = {
@@ -160,26 +164,26 @@ const chartOptions = useMemo(() => {
     interaction: { mode: 'index', intersect: false },
     animation: false,
     plugins: {
-      legend: { display: false },
-      zoom: {
-        pan: {
-          enabled: true,
-          mode: 'x',
-          onPanComplete: ({ chart }) => {
-            if (syncingRef.current) return;
-            setVisibleRange({ min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max) });
-          }
-        },
-        zoom: {
-          wheel: { enabled: true },
-          pinch: { enabled: true },
-          mode: 'x',
-          onZoomComplete: ({ chart }) => {
-            if (syncingRef.current) return;
-            setVisibleRange({ min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max) });
-          }
-        }
-      }
+    	legend: { display: false },
+    	zoom: {
+      		pan: {
+        		enabled: true,
+        		mode: 'x',
+        		onPanComplete: ({ chart }) => {
+            		if (syncingRef.current) return;
+  					setVisibleRange({ min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max) });
+          		}
+        	},
+        	zoom: {
+          		wheel: { enabled: true },
+          		pinch: { enabled: true },
+          		mode: 'x',
+        		onZoomComplete: ({ chart }) => {
+          			if (syncingRef.current) return;
+  					setVisibleRange({ min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max) });
+          		}
+        	}
+      	}
     },
     scales
   };
@@ -397,6 +401,7 @@ function TripGroupDetail() {
 
 export default TripGroupDetail;
 
+
 ### TripMap.js ###
 // FILE: frontend/src/TripMap.js
 //
@@ -408,7 +413,7 @@ export default TripGroupDetail;
 // https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png
 // https://tile.openstreetmap.bzh/ca/{z}/{x}/{y}.png
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -440,35 +445,41 @@ function MapController({ bounds }) {
 }
 
 function MapSync({ enabled, primaryPath, columns, onBoundsRangeChange }) {
+  const isSyncingRef = useRef(false);
   const map = useMapEvents({
-    moveend: compute,
-    zoomend: compute,
+    movestart: () => { isSyncingRef.current = false; },
+    moveend: () => { if (!isSyncingRef.current) compute(); },
+    zoomend: () => { if (!isSyncingRef.current) compute(); }
   });
 
-	function compute() {
-    	if (!enabled || !onBoundsRangeChange || !primaryPath || primaryPath.length === 0) return;
-    	const latCol = columns.find(c => c.includes('latitude'));
-    	const lonCol = columns.find(c => c.includes('longitude'));
-    	if (!latCol || !lonCol) return;
+  function compute() {
+    if (!enabled || !onBoundsRangeChange || !primaryPath || primaryPath.length === 0) return;
+    const latCol = columns.find(c => c.includes('latitude'));
+    const lonCol = columns.find(c => c.includes('longitude'));
+    if (!latCol || !lonCol) return;
 
-    	const b = map.getBounds();
-    	let min = Infinity, max = -Infinity;
+    const b = map.getBounds();
+    let min = Infinity, max = -Infinity;
 
-    	primaryPath.forEach((row, idx) => {
-      		const lat = row[latCol];
-      		const lon = row[lonCol];
-      		if (lat && lon && lat !== 0 && b.contains([lat, lon])) {
-        		if (idx < min) min = idx;
-        		if (idx > max) max = idx;
-      		}
-   		});
+    primaryPath.forEach((row, idx) => {
+      const lat = row[latCol];
+      const lon = row[lonCol];
+      if (lat && lon && lat !== 0 && b.contains([lat, lon])) {
+        if (idx < min) min = idx;
+        if (idx > max) max = idx;
+      }
+    });
 
-    	if (isFinite(min) && isFinite(max)) {
-      		onBoundsRangeChange({ min, max });
-    	}
-  	}
-return null;
-};
+    if (isFinite(min) && isFinite(max)) {
+      isSyncingRef.current = true;
+      onBoundsRangeChange({ min, max });
+      setTimeout(() => { isSyncingRef.current = false; }, 0);
+    }
+  }
+
+  return null;
+}
+
 
 function TripMap({ primaryPath, comparisonPath, columns, visibleRange, multiRoute = false, labels = [], onBoundsRangeChange }) {
 	const latCol = columns.find(c => c.includes('latitude'));
@@ -495,22 +506,25 @@ function TripMap({ primaryPath, comparisonPath, columns, visibleRange, multiRout
   	};
 
   	const getBounds = () => {
-    	if (multiRoute) {
-      		const allPoints = Array.isArray(primaryPath) && typeof primaryPath.flat === 'function' ? primaryPath.flat().filter(p => p[0] && p[1] && p[0] !== 0) : [];
-      		if (allPoints.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
-      		const latitudes = allPoints.map(p => p[0]);
-      		const longitudes = allPoints.map(p => p[1]);
-      		return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
-    	}
+		if (multiRoute) {
+			const allPoints = Array.isArray(primaryPath) && typeof primaryPath.flat === 'function'
+			? primaryPath.flat().filter(p => p && p.latitude && p.longitude && p.latitude !== 0 && p.longitude !== 0)
+			: [];
+			if (allPoints.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
+			const latitudes = allPoints.map(p => p.latitude);
+			const longitudes = allPoints.map(p => p.longitude);
+			return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
+		}
 
-    	if (!primaryPath) return [[44.97, -93.26], [44.98, -93.27]];
-    	const path = primaryPath.slice(visibleRange?.min ?? 0, (visibleRange?.max ?? primaryPath.length - 1) + 1);
-    	const points = path.map(row => [row[latCol], row[lonCol]]).filter(p => p[0] && p[1] && p[0] !== 0);
-    	if (points.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
-    	const latitudes = points.map(p => p[0]);
-    	const longitudes = points.map(p => p[1]);
-    	return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
-  	};
+		if (!primaryPath) return [[44.97, -93.26], [44.98, -93.27]];
+		const path = primaryPath.slice(visibleRange?.min ?? 0, (visibleRange?.max ?? primaryPath.length - 1) + 1);
+		const points = path.map(row => [row[latCol], row[lonCol]]).filter(p => p[0] && p[1] && p[0] !== 0);
+		if (points.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
+		const latitudes = points.map(p => p[0]);
+		const longitudes = points.map(p => p[1]);
+		return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
+	};
+
 
   	const bounds = getBounds();
   	const primarySegments = multiRoute ? [] : getPathSegments(primaryPath);

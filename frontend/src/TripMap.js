@@ -39,42 +39,14 @@ function MapController({ bounds }) {
   return null;
 }
 
-function MapSync({ enabled, primaryPath, columns, onBoundsRangeChange }) {
-  const isSyncingRef = useRef(false);
-  const map = useMapEvents({
-    movestart: () => { isSyncingRef.current = false; },
-    moveend: () => { if (!isSyncingRef.current) compute(); },
-    zoomend: () => { if (!isSyncingRef.current) compute(); }
-  });
-
-  function compute() {
-    if (!enabled || !onBoundsRangeChange || !primaryPath || primaryPath.length === 0) return;
-    const latCol = columns.find(c => c.includes('latitude'));
-    const lonCol = columns.find(c => c.includes('longitude'));
-    if (!latCol || !lonCol) return;
-
-    const b = map.getBounds();
-    let min = Infinity, max = -Infinity;
-
-    primaryPath.forEach((row, idx) => {
-      const lat = row[latCol];
-      const lon = row[lonCol];
-      if (lat && lon && lat !== 0 && b.contains([lat, lon])) {
-        if (idx < min) min = idx;
-        if (idx > max) max = idx;
-      }
-    });
-
-    if (isFinite(min) && isFinite(max)) {
-      isSyncingRef.current = true;
-      onBoundsRangeChange({ min, max });
-      setTimeout(() => { isSyncingRef.current = false; }, 0);
-    }
-  }
-
-  return null;
+function MapSync({ enabled }) {
+  	// Map still listens to events, but does nothing
+	useMapEvents({
+    	moveend: () => {},
+    	zoomend: () => {}
+	});
+  	return null;
 }
-
 
 function TripMap({ primaryPath, comparisonPath, columns, visibleRange, multiRoute = false, labels = [], onBoundsRangeChange }) {
 	const latCol = columns.find(c => c.includes('latitude'));
@@ -128,8 +100,7 @@ function TripMap({ primaryPath, comparisonPath, columns, visibleRange, multiRout
 	return (
 		<MapContainer bounds={bounds} style={{ height: '100%', width: '100%', backgroundColor: '#1F2937', borderRadius: '0.5rem' }}>
 			<MapController bounds={bounds} />
-			<MapSync enabled={!multiRoute} primaryPath={primaryPath} columns={columns} onBoundsRangeChange={onBoundsRangeChange} />
-
+			<MapSync enabled={!multiRoute} />
 			<TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors &copy; CARTO" />
 
 			{multiRoute ? (
