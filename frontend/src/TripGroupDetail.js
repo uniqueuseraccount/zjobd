@@ -5,6 +5,7 @@
 // - CLEANUP: Columns array passed explicitly.
 // - NO OTHER LOGIC CHANGES.
 //
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';

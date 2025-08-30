@@ -77,103 +77,111 @@ function LogDetail() {
 		chart.zoomScale('x', { min: currentMin, max: max }, 'default');
 	};
 	
+	const handleMapBoundsRangeChange = ({ min, max }) => {
+		if (!chartRef.current) return;
+		syncingRef.current = true;
+		chartRef.current.zoomScale('x', { min, max }, 'default');
+		setVisibleRange({ min, max });
+		// release after chart applies
+		setTimeout(() => { syncingRef.current = false; }, 0);
+	};
+
 	const chartData = useMemo(() => {
-   		if (!log) return null;
+		if (!log) return null;
 
-    	const datasets = [];
-    	const activePIDs = selectedPIDs.filter(p => p !== 'none');
+		const datasets = [];
 
-    	activePIDs.forEach((pid, index) => {
-       		datasets.push({
-            	label: pid,
-            	data: log.data.map(row => row[pid]),
-            	borderColor: CHART_COLORS[index],
-            	yAxisID: `y${index}`,
-            	pointRadius: 0,
-            	borderWidth: 2,
-        	});
-    	});
+		// Fixed slot-to-color mapping (no shifting when you clear a PID)
+		selectedPIDs.forEach((pid, slotIndex) => {
+			if (pid === 'none') return;
 
-		if (comparisonLog) {
-			activePIDs.forEach((pid, index) => {
+			datasets.push({
+				label: pid,
+				data: log.data.map(row => row[pid]),
+				borderColor: CHART_COLORS[slotIndex],
+				yAxisID: `y${slotIndex}`,
+				pointRadius: 0,
+				borderWidth: 2,
+			});
+
+			if (comparisonLog) {
 				datasets.push({
 					label: `${pid} (Comp)`,
 					data: comparisonLog.data.map(row => row[pid]),
-					borderColor: COMPARISON_COLORS[index],
+					borderColor: COMPARISON_COLORS[slotIndex],
 					borderDash: [5, 5],
-					yAxisID: `y${index}`,
+					yAxisID: `y${slotIndex}`,
 					pointRadius: 0,
 					borderWidth: 2,
 				});
-			});	
-		}	
+			}
+	});
 
-    	return {
-        	labels: log.data.map((_, i) => i),
-        	datasets
-    	};
-	}, [log, selectedPIDs, comparisonLog]);
+  return { labels: log.data.map((_, i) => i), datasets };
+}, [log, selectedPIDs, comparisonLog]);
 
-	const chartOptions = useMemo(() => {
-    const scales = {
-        x: {
-            ticks: {
-                callback: function (value) {
-                    if (log && log.data[value]) {
-                        const seconds = log.data[value].timestamp - log.data[0].timestamp;
-                        const minutes = Math.floor(seconds / 60);
-                        const remSeconds = seconds % 60;
-                        return `${minutes}m ${remSeconds}s`;
-                    }
-                    return value;
-                }
-            }
+
+const syncingRef = useRef(false);
+
+const chartOptions = useMemo(() => {
+  const scales = {
+    x: {
+      ticks: {
+        callback: function (value) {
+          if (log && log.data[value]) {
+            const seconds = log.data[value].timestamp - log.data[0].timestamp;
+            const minutes = Math.floor(seconds / 60);
+            const remSeconds = seconds % 60;
+            return `${minutes}m ${remSeconds}s`;
+          }
+          return value;
         }
+      }
+    }
+  };
+
+  // Axes per fixed slot index (colors and titles stay aligned with selectors)
+  selectedPIDs.forEach((pid, slotIndex) => {
+    if (pid === 'none') return;
+    scales[`y${slotIndex}`] = {
+      type: 'linear',
+      display: true,
+      position: slotIndex % 2 === 0 ? 'left' : 'right',
+      grid: { drawOnChartArea: slotIndex === 0 },
+      ticks: { color: CHART_COLORS[slotIndex] },
+      title: { display: true, text: pid.replace(/_/g, ' '), color: CHART_COLORS[slotIndex] }
     };
+  });
 
-    const activePIDs = selectedPIDs.filter(p => p !== 'none');
-    activePIDs.forEach((pid, index) => {
-        scales[`y${index}`] = {
-            type: 'linear',
-            display: true,
-            position: index % 2 === 0 ? 'left' : 'right',
-            grid: { drawOnChartArea: index === 0 },
-            ticks: { color: CHART_COLORS[index] },
-            title: { display: true, text: pid.replace(/_/g, ' '), color: CHART_COLORS[index] }
-        };
-    });
-
-    return {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        animation: false,
-        plugins: {
-            legend: { display: false },
-            zoom: {
-                pan: {
-                    enabled: true,
-                    mode: 'x',
-                    onPanComplete: ({ chart }) =>
-                        setVisibleRange({
-                            min: Math.round(chart.scales.x.min),
-                            max: Math.round(chart.scales.x.max)
-                        })
-                },
-                zoom: {
-                    wheel: { enabled: true },
-                    pinch: { enabled: true },
-                    mode: 'x',
-                    onZoomComplete: ({ chart }) =>
-                        setVisibleRange({
-                            min: Math.round(chart.scales.x.min),
-                            max: Math.round(chart.scales.x.max)
-                        })
-                }
-            }
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    animation: false,
+    plugins: {
+      legend: { display: false },
+      zoom: {
+        pan: {
+          enabled: true,
+          mode: 'x',
+          onPanComplete: ({ chart }) => {
+            if (syncingRef.current) return;
+            setVisibleRange({ min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max) });
+          }
         },
-        scales: scales
-    };
+        zoom: {
+          wheel: { enabled: true },
+          pinch: { enabled: true },
+          mode: 'x',
+          onZoomComplete: ({ chart }) => {
+            if (syncingRef.current) return;
+            setVisibleRange({ min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max) });
+          }
+        }
+      }
+    },
+    scales
+  };
 }, [log, selectedPIDs]);
 
 	if (!log) return <p className="text-center">Loading log data...</p>;
@@ -205,14 +213,16 @@ function LogDetail() {
 				{selectedPIDs.map((pid, index) => <PidSelector key={index} color={CHART_COLORS[index]} options={log.columns.filter(c => !['data_id', 'timestamp', 'operating_state'].includes(c))} selectedValue={pid} onChange={(value) => handlePidChange(index, value)} />)}
 			</div>
 
-			<div className="bg-gray-800 rounded-lg shadow-xl p-4 h-[60vh] relative">
-				<Line ref={chartRef} options={chartOptions} data={chartData} />
-				<div className="absolute bottom-4 right-4 flex space-x-2 bg-gray-900/50 p-1 rounded-md">
-					<span className="text-gray-400 text-sm self-center">Zoom:</span>
+			<div className="bg-gray-800 rounded-lg shadow-xl p-4">
+				<div className="flex justify-end items-center space-x-2 mb-2">
+					<span className="text-gray-400 text-sm">Zoom:</span>
 					<button onClick={() => setZoom(2)} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">2min</button>
 					<button onClick={() => setZoom(5)} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">5min</button>
 					<button onClick={() => setZoom(10)} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">10min</button>
 					<button onClick={() => chartRef.current.resetZoom()} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">Reset</button>
+				</div>
+				<div className="h-[56vh]">
+					<Line ref={chartRef} options={chartOptions} data={chartData} />
 				</div>
 			</div>
 
@@ -223,8 +233,9 @@ function LogDetail() {
 					columns={log?.columns || []}
 					visibleRange={visibleRange}
 					multiRoute={false}
+					onBoundsRangeChange={handleMapBoundsRangeChange}
 				/>
-			</div>
+				</div>
 		</div>
 	);
 }
