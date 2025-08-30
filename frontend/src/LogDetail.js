@@ -134,7 +134,7 @@ function LogDetail() {
 			},
 			scales: scales
 		}
-	}, [log]);
+	}, [log, selectedPIDs]);
 
 	if (!log) return <p className="text-center">Loading log data...</p>;
 	

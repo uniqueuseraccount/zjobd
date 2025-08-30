@@ -104,9 +104,9 @@ function TripGroupDetail() {
 			{groupData && groupData.gps_data && (
 				<div className="bg-gray-800 rounded-lg shadow-xl p-4 h-[60vh]">
 					<TripMap 
-						positions={Object.values(groupData.gps_data)} 
+						primaryPath={Object.values(groupData.gps_data)} 
 						multiRoute={true} 
-						columns={['latitude', 'longitude', 'operating_state']} // Pass a generic columns array
+						columns={['latitude', 'longitude', 'operating_state']}
 						labels={groupData.logs.map(l => new Date(l.start_timestamp * 1000).toLocaleDateString())}
 					/>
 				</div>
