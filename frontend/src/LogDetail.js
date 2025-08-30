@@ -78,63 +78,103 @@ function LogDetail() {
 	};
 	
 	const chartData = useMemo(() => {
-		if (!log) return null;
-		const datasets = [];
-		const activePIDs = selectedPIDs.filter(p => p !== 'none');
+   		if (!log) return null;
 
-		activePIDs.forEach((pid, index) => {
-			datasets.push({
-				label: pid, data: log.data.map(row => row[pid]), borderColor: CHART_COLORS[index], yAxisID: `y${index}`, pointRadius: 0, borderWidth: 2,
-			});
-		});
+    	const datasets = [];
+    	const activePIDs = selectedPIDs.filter(p => p !== 'none');
+
+    	activePIDs.forEach((pid, index) => {
+       		datasets.push({
+            	label: pid,
+            	data: log.data.map(row => row[pid]),
+            	borderColor: CHART_COLORS[index],
+            	yAxisID: `y${index}`,
+            	pointRadius: 0,
+            	borderWidth: 2,
+        	});
+    	});
 
 		if (comparisonLog) {
 			activePIDs.forEach((pid, index) => {
 				datasets.push({
-					label: `${pid} (Comp)`, data: comparisonLog.data.map(row => row[pid]), borderColor: COMPARISON_COLORS[index], borderDash: [5, 5], yAxisID: `y${index}`, pointRadius: 0, borderWidth: 2,
+					label: `${pid} (Comp)`,
+					data: comparisonLog.data.map(row => row[pid]),
+					borderColor: COMPARISON_COLORS[index],
+					borderDash: [5, 5],
+					yAxisID: `y${index}`,
+					pointRadius: 0,
+					borderWidth: 2,
 				});
-			});
-		}
-		return { labels: log.data.map((_, i) => i), datasets };
+			});	
+		}	
+
+    	return {
+        	labels: log.data.map((_, i) => i),
+        	datasets
+    	};
 	}, [log, selectedPIDs, comparisonLog]);
 
 	const chartOptions = useMemo(() => {
-		const scales = { x: { ticks: { 
-			callback: function(value) {
-				if(log && log.data[value]) {
-					const seconds = log.data[value].timestamp - log.data[0].timestamp;
-					const minutes = Math.floor(seconds / 60);
-					const remSeconds = seconds % 60;
-					return `${minutes}m ${remSeconds}s`;
-				}
-				return value;
-			}
-		}}};
-		
-		const activePIDs = selectedPIDs.filter(p => p !== 'none');
-		activePIDs.forEach((pid, index) => {
-			scales[`y${index}`] = { 
-				type: 'linear', 
-				display: true, 
-				position: index % 2 === 0 ? 'left' : 'right', 
-				grid: { drawOnChartArea: index === 0 }, 
-				ticks: {color: CHART_COLORS[index]},
-				title: { display: true, text: pid.replace(/_/g, ' '), color: CHART_COLORS[index] }
-			};
-		});
+    const scales = {
+        x: {
+            ticks: {
+                callback: function (value) {
+                    if (log && log.data[value]) {
+                        const seconds = log.data[value].timestamp - log.data[0].timestamp;
+                        const minutes = Math.floor(seconds / 60);
+                        const remSeconds = seconds % 60;
+                        return `${minutes}m ${remSeconds}s`;
+                    }
+                    return value;
+                }
+            }
+        }
+    };
 
-		return {
-			responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, animation: false,
-			plugins: {
-				legend: { display: false },
-				zoom: {
-					pan: { enabled: true, mode: 'x', onPanComplete: ({chart}) => setVisibleRange({min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max)}) },
-					zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoomComplete: ({chart}) => setVisibleRange({min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max)}) }
-				}
-			},
-			scales: scales
-		}
-	}, [log, selectedPIDs]);
+    const activePIDs = selectedPIDs.filter(p => p !== 'none');
+    activePIDs.forEach((pid, index) => {
+        scales[`y${index}`] = {
+            type: 'linear',
+            display: true,
+            position: index % 2 === 0 ? 'left' : 'right',
+            grid: { drawOnChartArea: index === 0 },
+            ticks: { color: CHART_COLORS[index] },
+            title: { display: true, text: pid.replace(/_/g, ' '), color: CHART_COLORS[index] }
+        };
+    });
+
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        animation: false,
+        plugins: {
+            legend: { display: false },
+            zoom: {
+                pan: {
+                    enabled: true,
+                    mode: 'x',
+                    onPanComplete: ({ chart }) =>
+                        setVisibleRange({
+                            min: Math.round(chart.scales.x.min),
+                            max: Math.round(chart.scales.x.max)
+                        })
+                },
+                zoom: {
+                    wheel: { enabled: true },
+                    pinch: { enabled: true },
+                    mode: 'x',
+                    onZoomComplete: ({ chart }) =>
+                        setVisibleRange({
+                            min: Math.round(chart.scales.x.min),
+                            max: Math.round(chart.scales.x.max)
+                        })
+                }
+            }
+        },
+        scales: scales
+    };
+}, [log, selectedPIDs]);
 
 	if (!log) return <p className="text-center">Loading log data...</p>;
 	
@@ -177,7 +217,13 @@ function LogDetail() {
 			</div>
 
 			<div className="bg-gray-800 rounded-lg shadow-xl p-4 h-[60vh]">
-				<TripMap primaryPath={log.data} comparisonPath={comparisonLog?.data} columns={log.columns} visibleRange={visibleRange} />
+				<TripMap
+					primaryPath={log?.data || []}
+					comparisonPath={comparisonLog?.data || []}
+					columns={log?.columns || []}
+					visibleRange={visibleRange}
+					multiRoute={false}
+				/>
 			</div>
 		</div>
 	);
