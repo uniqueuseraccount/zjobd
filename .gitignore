@@ -8,6 +8,13 @@ backend/db_credentials.py
 .AppleDouble
 .LSOverride
 
+## Logs with sensitive data ##
+logs/*.csv
+
+## Application Logs ##
+program_logs/*.log
+
+
 # Icon must end with two \r
 Icon
 
