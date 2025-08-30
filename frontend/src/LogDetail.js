@@ -66,29 +66,32 @@ function LogDetail() {
 		setComparisonLog(response.data);
 	};
 
-	const setZoom = (minutes) => {
-  		if (!chartRef.current || !log || log.data.length < 2) return;
-		const chart = chartRef.current;
-		const timeDiff = log.data[1].timestamp - log.data[0].timestamp;
-		const pointsPerSecond = timeDiff > 0 ? 1 / timeDiff : 1;
-		const pointsToShow = Math.round(minutes * 60 * pointsPerSecond);
-		const currentMin = Math.round(chart.scales.x.min);
-		const max = Math.min(currentMin + pointsToShow, log.data.length - 1);
+	// Add this near the top of LogDetail, before setZoom:
+const syncingRef = useRef(false);
 
-  		syncingRef.current = true;
-  		chart.zoomScale('x', { min: currentMin, max }, 'default');
-  		setVisibleRange({ min: currentMin, max });
-  		setTimeout(() => { syncingRef.current = false; }, 0);
-	};
+const setZoom = (minutes) => {
+  if (!chartRef.current || !log || log.data.length < 2) return;
+  const chart = chartRef.current;
+  const timeDiff = log.data[1].timestamp - log.data[0].timestamp;
+  const pointsPerSecond = timeDiff > 0 ? 1 / timeDiff : 1;
+  const pointsToShow = Math.round(minutes * 60 * pointsPerSecond);
+  const currentMin = Math.round(chart.scales.x.min);
+  const max = Math.min(currentMin + pointsToShow, log.data.length - 1);
 
-	const handleMapBoundsRangeChange = ({ min, max }) => {
-		if (!chartRef.current) return;
-		syncingRef.current = true;
-		chartRef.current.zoomScale('x', { min, max }, 'default');
-		setVisibleRange({ min, max });
-		// release after chart applies
-		setTimeout(() => { syncingRef.current = false; }, 0);
-	};
+  syncingRef.current = true; // prevent map from snapping back
+  chart.zoomScale('x', { min: currentMin, max }, 'default');
+  setVisibleRange({ min: currentMin, max });
+  setTimeout(() => { syncingRef.current = false; }, 0);
+};
+
+const handleMapBoundsRangeChange = ({ min, max }) => {
+  if (!chartRef.current) return;
+  syncingRef.current = true; // prevent chart from triggering map update back
+  chartRef.current.zoomScale('x', { min, max }, 'default');
+  setVisibleRange({ min, max });
+  setTimeout(() => { syncingRef.current = false; }, 0);
+};
+
 
 	const chartData = useMemo(() => {
 		if (!log) return null;
@@ -123,9 +126,6 @@ function LogDetail() {
 
   return { labels: log.data.map((_, i) => i), datasets };
 }, [log, selectedPIDs, comparisonLog]);
-
-
-const syncingRef = useRef(false);
 
 const chartOptions = useMemo(() => {
   const scales = {
@@ -163,26 +163,26 @@ const chartOptions = useMemo(() => {
     interaction: { mode: 'index', intersect: false },
     animation: false,
     plugins: {
-      legend: { display: false },
-      zoom: {
-        pan: {
-          enabled: true,
-          mode: 'x',
-          onPanComplete: ({ chart }) => {
-            if (syncingRef.current) return;
-            setVisibleRange({ min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max) });
-          }
-        },
-        zoom: {
-          wheel: { enabled: true },
-          pinch: { enabled: true },
-          mode: 'x',
-          onZoomComplete: ({ chart }) => {
-            if (syncingRef.current) return;
-            setVisibleRange({ min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max) });
-          }
-        }
-      }
+    	legend: { display: false },
+    	zoom: {
+      		pan: {
+        		enabled: true,
+        		mode: 'x',
+        		onPanComplete: ({ chart }) => {
+            		if (syncingRef.current) return;
+  					setVisibleRange({ min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max) });
+          		}
+        	},
+        	zoom: {
+          		wheel: { enabled: true },
+          		pinch: { enabled: true },
+          		mode: 'x',
+        		onZoomComplete: ({ chart }) => {
+          			if (syncingRef.current) return;
+  					setVisibleRange({ min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max) });
+          		}
+        	}
+      	}
     },
     scales
   };

@@ -8,7 +8,7 @@
 // https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png
 // https://tile.openstreetmap.bzh/ca/{z}/{x}/{y}.png
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -40,35 +40,41 @@ function MapController({ bounds }) {
 }
 
 function MapSync({ enabled, primaryPath, columns, onBoundsRangeChange }) {
-	const map = useMapEvents({
-    	moveend: compute,
-    	zoomend: compute,
-  	});
+  const isSyncingRef = useRef(false);
+  const map = useMapEvents({
+    movestart: () => { isSyncingRef.current = false; },
+    moveend: () => { if (!isSyncingRef.current) compute(); },
+    zoomend: () => { if (!isSyncingRef.current) compute(); }
+  });
 
-	function compute() {
-    	if (!enabled || !onBoundsRangeChange || !primaryPath || primaryPath.length === 0) return;
-    	const latCol = columns.find(c => c.includes('latitude'));
-    	const lonCol = columns.find(c => c.includes('longitude'));
-    	if (!latCol || !lonCol) return;
+  function compute() {
+    if (!enabled || !onBoundsRangeChange || !primaryPath || primaryPath.length === 0) return;
+    const latCol = columns.find(c => c.includes('latitude'));
+    const lonCol = columns.find(c => c.includes('longitude'));
+    if (!latCol || !lonCol) return;
 
-    	const b = map.getBounds();
-    	let min = Infinity, max = -Infinity;
+    const b = map.getBounds();
+    let min = Infinity, max = -Infinity;
 
-    	primaryPath.forEach((row, idx) => {
-      		const lat = row[latCol];
-      		const lon = row[lonCol];
-      		if (lat && lon && lat !== 0 && b.contains([lat, lon])) {
-        		if (idx < min) min = idx;
-        		if (idx > max) max = idx;
-      		}
-   		});
+    primaryPath.forEach((row, idx) => {
+      const lat = row[latCol];
+      const lon = row[lonCol];
+      if (lat && lon && lat !== 0 && b.contains([lat, lon])) {
+        if (idx < min) min = idx;
+        if (idx > max) max = idx;
+      }
+    });
 
-    	if (isFinite(min) && isFinite(max)) {
-      		onBoundsRangeChange({ min, max });
-    	}
-  	}
-return null;
-};
+    if (isFinite(min) && isFinite(max)) {
+      isSyncingRef.current = true;
+      onBoundsRangeChange({ min, max });
+      setTimeout(() => { isSyncingRef.current = false; }, 0);
+    }
+  }
+
+  return null;
+}
+
 
 function TripMap({ primaryPath, comparisonPath, columns, visibleRange, multiRoute = false, labels = [], onBoundsRangeChange }) {
 	const latCol = columns.find(c => c.includes('latitude'));
