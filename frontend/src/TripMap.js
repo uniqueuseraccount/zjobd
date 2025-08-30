@@ -8,7 +8,7 @@
 // https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png
 // https://tile.openstreetmap.bzh/ca/{z}/{x}/{y}.png
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { MapContainer, TileLayer, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 

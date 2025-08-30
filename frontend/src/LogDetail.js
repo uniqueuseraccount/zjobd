@@ -6,7 +6,7 @@
 // - BEHAVIOR: Chart→map sync preserved, map→chart sync disabled to prevent snap-back.
 //
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import TripChart from './TripChart';
