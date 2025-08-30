@@ -67,16 +67,20 @@ function LogDetail() {
 	};
 
 	const setZoom = (minutes) => {
+  		if (!chartRef.current || !log || log.data.length < 2) return;
 		const chart = chartRef.current;
-		if (!chart || !log || log.data.length < 2) return;
 		const timeDiff = log.data[1].timestamp - log.data[0].timestamp;
 		const pointsPerSecond = timeDiff > 0 ? 1 / timeDiff : 1;
 		const pointsToShow = Math.round(minutes * 60 * pointsPerSecond);
 		const currentMin = Math.round(chart.scales.x.min);
 		const max = Math.min(currentMin + pointsToShow, log.data.length - 1);
-		chart.zoomScale('x', { min: currentMin, max: max }, 'default');
+
+  		syncingRef.current = true;
+  		chart.zoomScale('x', { min: currentMin, max }, 'default');
+  		setVisibleRange({ min: currentMin, max });
+  		setTimeout(() => { syncingRef.current = false; }, 0);
 	};
-	
+
 	const handleMapBoundsRangeChange = ({ min, max }) => {
 		if (!chartRef.current) return;
 		syncingRef.current = true;
