@@ -211,63 +211,103 @@ function LogDetail() {
 	};
 	
 	const chartData = useMemo(() => {
-		if (!log) return null;
-		const datasets = [];
-		const activePIDs = selectedPIDs.filter(p => p !== 'none');
+   		if (!log) return null;
 
-		activePIDs.forEach((pid, index) => {
-			datasets.push({
-				label: pid, data: log.data.map(row => row[pid]), borderColor: CHART_COLORS[index], yAxisID: `y${index}`, pointRadius: 0, borderWidth: 2,
-			});
-		});
+    	const datasets = [];
+    	const activePIDs = selectedPIDs.filter(p => p !== 'none');
+
+    	activePIDs.forEach((pid, index) => {
+       		datasets.push({
+            	label: pid,
+            	data: log.data.map(row => row[pid]),
+            	borderColor: CHART_COLORS[index],
+            	yAxisID: `y${index}`,
+            	pointRadius: 0,
+            	borderWidth: 2,
+        	});
+    	});
 
 		if (comparisonLog) {
 			activePIDs.forEach((pid, index) => {
 				datasets.push({
-					label: `${pid} (Comp)`, data: comparisonLog.data.map(row => row[pid]), borderColor: COMPARISON_COLORS[index], borderDash: [5, 5], yAxisID: `y${index}`, pointRadius: 0, borderWidth: 2,
+					label: `${pid} (Comp)`,
+					data: comparisonLog.data.map(row => row[pid]),
+					borderColor: COMPARISON_COLORS[index],
+					borderDash: [5, 5],
+					yAxisID: `y${index}`,
+					pointRadius: 0,
+					borderWidth: 2,
 				});
-			});
-		}
-		return { labels: log.data.map((_, i) => i), datasets };
+			});	
+		}	
+
+    	return {
+        	labels: log.data.map((_, i) => i),
+        	datasets
+    	};
 	}, [log, selectedPIDs, comparisonLog]);
 
 	const chartOptions = useMemo(() => {
-		const scales = { x: { ticks: { 
-			callback: function(value) {
-				if(log && log.data[value]) {
-					const seconds = log.data[value].timestamp - log.data[0].timestamp;
-					const minutes = Math.floor(seconds / 60);
-					const remSeconds = seconds % 60;
-					return `${minutes}m ${remSeconds}s`;
-				}
-				return value;
-			}
-		}}};
-		
-		const activePIDs = selectedPIDs.filter(p => p !== 'none');
-		activePIDs.forEach((pid, index) => {
-			scales[`y${index}`] = { 
-				type: 'linear', 
-				display: true, 
-				position: index % 2 === 0 ? 'left' : 'right', 
-				grid: { drawOnChartArea: index === 0 }, 
-				ticks: {color: CHART_COLORS[index]},
-				title: { display: true, text: pid.replace(/_/g, ' '), color: CHART_COLORS[index] }
-			};
-		});
+    const scales = {
+        x: {
+            ticks: {
+                callback: function (value) {
+                    if (log && log.data[value]) {
+                        const seconds = log.data[value].timestamp - log.data[0].timestamp;
+                        const minutes = Math.floor(seconds / 60);
+                        const remSeconds = seconds % 60;
+                        return `${minutes}m ${remSeconds}s`;
+                    }
+                    return value;
+                }
+            }
+        }
+    };
 
-		return {
-			responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, animation: false,
-			plugins: {
-				legend: { display: false },
-				zoom: {
-					pan: { enabled: true, mode: 'x', onPanComplete: ({chart}) => setVisibleRange({min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max)}) },
-					zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoomComplete: ({chart}) => setVisibleRange({min: Math.round(chart.scales.x.min), max: Math.round(chart.scales.x.max)}) }
-				}
-			},
-			scales: scales
-		}
-	}, [log]);
+    const activePIDs = selectedPIDs.filter(p => p !== 'none');
+    activePIDs.forEach((pid, index) => {
+        scales[`y${index}`] = {
+            type: 'linear',
+            display: true,
+            position: index % 2 === 0 ? 'left' : 'right',
+            grid: { drawOnChartArea: index === 0 },
+            ticks: { color: CHART_COLORS[index] },
+            title: { display: true, text: pid.replace(/_/g, ' '), color: CHART_COLORS[index] }
+        };
+    });
+
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        animation: false,
+        plugins: {
+            legend: { display: false },
+            zoom: {
+                pan: {
+                    enabled: true,
+                    mode: 'x',
+                    onPanComplete: ({ chart }) =>
+                        setVisibleRange({
+                            min: Math.round(chart.scales.x.min),
+                            max: Math.round(chart.scales.x.max)
+                        })
+                },
+                zoom: {
+                    wheel: { enabled: true },
+                    pinch: { enabled: true },
+                    mode: 'x',
+                    onZoomComplete: ({ chart }) =>
+                        setVisibleRange({
+                            min: Math.round(chart.scales.x.min),
+                            max: Math.round(chart.scales.x.max)
+                        })
+                }
+            }
+        },
+        scales: scales
+    };
+}, [log, selectedPIDs]);
 
 	if (!log) return <p className="text-center">Loading log data...</p>;
 	
@@ -310,7 +350,13 @@ function LogDetail() {
 			</div>
 
 			<div className="bg-gray-800 rounded-lg shadow-xl p-4 h-[60vh]">
-				<TripMap primaryPath={log.data} comparisonPath={comparisonLog?.data} columns={log.columns} visibleRange={visibleRange} />
+				<TripMap
+					primaryPath={log?.data || []}
+					comparisonPath={comparisonLog?.data || []}
+					columns={log?.columns || []}
+					visibleRange={visibleRange}
+					multiRoute={false}
+				/>
 			</div>
 		</div>
 	);
@@ -517,9 +563,10 @@ export default Tools;
 // FILE: frontend/src/TripGroupDetail.js
 //
 // --- VERSION 1.9.7-ALPHA ---
-// - FIXED: The `gpsData is not defined` runtime error.
-// ----------------------------
-
+// - FIXED: Passes `primaryPath` instead of `positions` to TripMap to match prop signature.
+// - CLEANUP: Columns array passed explicitly.
+// - NO OTHER LOGIC CHANGES.
+//
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
@@ -527,111 +574,144 @@ import { Line } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
 import TripMap from './TripMap';
 
-ChartJS.register( CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend );
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
-const CHART_COLORS = [ '#38BDF8', '#F59E0B', '#4ADE80', '#F472B6', '#A78BFA', '#2DD4BF', '#FB7185', '#FACC15', '#818CF8', '#FDE047' ];
+const CHART_COLORS = [
+  '#38BDF8', '#F59E0B', '#4ADE80', '#F472B6', '#A78BFA',
+  '#2DD4BF', '#FB7185', '#FACC15', '#818CF8', '#FDE047'
+];
 
 function TripGroupDetail() {
-	const { groupId } = useParams();
-	const [groupData, setGroupData] = useState(null);
-	const [availablePIDs, setAvailablePIDs] = useState([]);
-	const [selectedPID, setSelectedPID] = useState('engine_rpm');
-	const [status, setStatus] = useState('Loading group data...');
+  const { groupId } = useParams();
+  const [groupData, setGroupData] = useState(null);
+  const [availablePIDs, setAvailablePIDs] = useState([]);
+  const [selectedPID, setSelectedPID] = useState('engine_rpm');
+  const [status, setStatus] = useState('Loading group data...');
 
-	useEffect(() => {
-		const fetchGroupData = async () => {
-			try {
-				const response = await axios.get(`http://localhost:5001/api/trip-groups/${groupId}`);
-				setGroupData(response.data);
+  useEffect(() => {
+    const fetchGroupData = async () => {
+      try {
+        const response = await axios.get(`http://localhost:5001/api/trip-groups/${groupId}`);
+        setGroupData(response.data);
 
-				const firstLogData = Object.values(response.data.log_data)[0] || [];
-				if (firstLogData.length > 0) {
-					const uniquePids = Object.keys(firstLogData[0] || {}).filter(p => !['data_id', 'timestamp', 'operating_state'].includes(p));
-					setAvailablePIDs(uniquePids.sort());
-				}
-			} catch (error) {
-				console.error("Error fetching group detail:", error);
-				setStatus('Failed to load group data.');
-			}
-		};
-		fetchGroupData();
-	}, [groupId]);
+        const firstLogData = Object.values(response.data.log_data)[0] || [];
+        if (firstLogData.length > 0) {
+          const uniquePids = Object.keys(firstLogData[0] || {})
+            .filter(p => !['data_id', 'timestamp', 'operating_state'].includes(p));
+          setAvailablePIDs(uniquePids.sort());
+        }
+      } catch (error) {
+        console.error("Error fetching group detail:", error);
+        setStatus('Failed to load group data.');
+      }
+    };
+    fetchGroupData();
+  }, [groupId]);
 
-	const chartData = useMemo(() => {
-		if (!groupData || !selectedPID) return null;
+  const chartData = useMemo(() => {
+    if (!groupData || !selectedPID) return null;
 
-		const datasets = groupData.logs.map((log, index) => {
-			const logData = groupData.log_data[log.log_id] || [];
-			return {
-				label: new Date(log.start_timestamp * 1000).toLocaleDateString(),
-				data: logData.map(row => ({
-					x: row.timestamp - log.start_timestamp,
-					y: row[selectedPID]
-				})),
-				borderColor: CHART_COLORS[index % CHART_COLORS.length],
-				backgroundColor: `${CHART_COLORS[index % CHART_COLORS.length]}80`,
-				tension: 0.4,
-				pointRadius: 0,
-				borderWidth: 2,
-			};
-		});
-		return { datasets };
-	}, [groupData, selectedPID]);
+    const datasets = groupData.logs.map((log, index) => {
+      const logData = groupData.log_data[log.log_id] || [];
+      return {
+        label: new Date(log.start_timestamp * 1000).toLocaleDateString(),
+        data: logData.map(row => ({
+          x: row.timestamp - log.start_timestamp,
+          y: row[selectedPID]
+        })),
+        borderColor: CHART_COLORS[index % CHART_COLORS.length],
+        backgroundColor: `${CHART_COLORS[index % CHART_COLORS.length]}80`,
+        tension: 0.4,
+        pointRadius: 0,
+        borderWidth: 2,
+      };
+    });
+    return { datasets };
+  }, [groupData, selectedPID]);
 
-	const chartOptions = {
-		responsive: true,
-		maintainAspectRatio: false,
-		interaction: { mode: 'index', intersect: false },
-		plugins: {
-			title: { display: true, text: `Comparison for PID: ${selectedPID}`, color: '#FFFFFF', font: { size: 18 } },
-			legend: { position: 'bottom', labels: { color: '#FFFFFF' } },
-		},
-		scales: {
-			x: { type: 'linear', title: { display: true, text: 'Time since trip start (seconds)', color: '#9CA3AF' }, ticks: { color: '#9CA3AF' } },
-			y: { title: { display: true, text: selectedPID.replace(/_/g, ' '), color: '#9CA3AF' }, ticks: { color: '#9CA3AF' } },
-		},
-	};
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      title: {
+        display: true,
+        text: `Comparison for PID: ${selectedPID}`,
+        color: '#FFFFFF',
+        font: { size: 18 }
+      },
+      legend: { position: 'bottom', labels: { color: '#FFFFFF' } },
+    },
+    scales: {
+      x: {
+        type: 'linear',
+        title: { display: true, text: 'Time since trip start (seconds)', color: '#9CA3AF' },
+        ticks: { color: '#9CA3AF' }
+      },
+      y: {
+        title: { display: true, text: selectedPID.replace(/_/g, ' '), color: '#9CA3AF' },
+        ticks: { color: '#9CA3AF' }
+      },
+    },
+  };
 
-	return (
-		<div className="space-y-6">
-			<div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-				<div className="md:col-span-3 bg-gray-800 rounded-lg shadow-xl p-4 h-[70vh]">
-					{chartData ? ( <Line options={chartOptions} data={chartData} /> ) : ( <p className="flex items-center justify-center h-full text-gray-400">{status}</p> )}
-				</div>
-				<div className="md:col-span-1 bg-gray-800 rounded-lg shadow-xl p-4">
-					<h3 className="text-lg font-bold border-b-2 border-cyan-500 pb-2 mb-3">Logs in this Group</h3>
-					<div className="flex flex-col space-y-1 max-h-[30vh] overflow-y-auto">
-						{groupData?.logs.map(log => (
-							<Link key={log.log_id} to={`/logs/${log.log_id}`} className="text-left p-2 rounded-md text-sm hover:bg-gray-700 text-cyan-400">
-								{log.file_name}
-							</Link>
-						))}
-					</div>
-					<h3 className="text-lg font-bold border-b-2 border-cyan-500 pb-2 my-3">Select PID to Compare</h3>
-					<div className="flex flex-col space-y-1 max-h-[30vh] overflow-y-auto">
-						{availablePIDs.map(pid => (
-							<button key={pid} onClick={() => setSelectedPID(pid)} className={`text-left p-2 rounded-md text-sm ${selectedPID === pid ? 'bg-cyan-600 font-bold' : 'hover:bg-gray-700'}`}>
-								{pid.replace(/_/g, ' ')}
-							</button>
-						))}
-					</div>
-				</div>
-			</div>
-			{groupData && groupData.gps_data && (
-				<div className="bg-gray-800 rounded-lg shadow-xl p-4 h-[60vh]">
-					<TripMap 
-						positions={Object.values(groupData.gps_data)} 
-						multiRoute={true} 
-						columns={['latitude', 'longitude', 'operating_state']} // Pass a generic columns array
-						labels={groupData.logs.map(l => new Date(l.start_timestamp * 1000).toLocaleDateString())}
-					/>
-				</div>
-			)}
-		</div>
-	);
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="md:col-span-3 bg-gray-800 rounded-lg shadow-xl p-4 h-[70vh]">
+          {chartData ? (
+            <Line options={chartOptions} data={chartData} />
+          ) : (
+            <p className="flex items-center justify-center h-full text-gray-400">{status}</p>
+          )}
+        </div>
+        <div className="md:col-span-1 bg-gray-800 rounded-lg shadow-xl p-4">
+          <h3 className="text-lg font-bold border-b-2 border-cyan-500 pb-2 mb-3">Logs in this Group</h3>
+          <div className="flex flex-col space-y-1 max-h-[30vh] overflow-y-auto">
+            {groupData?.logs.map(log => (
+              <Link
+                key={log.log_id}
+                to={`/logs/${log.log_id}`}
+                className="text-left p-2 rounded-md text-sm hover:bg-gray-700 text-cyan-400"
+              >
+                {log.file_name}
+              </Link>
+            ))}
+          </div>
+          <h3 className="text-lg font-bold border-b-2 border-cyan-500 pb-2 my-3">Select PID to Compare</h3>
+          <div className="flex flex-col space-y-1 max-h-[30vh] overflow-y-auto">
+            {availablePIDs.map(pid => (
+              <button
+                key={pid}
+                onClick={() => setSelectedPID(pid)}
+                className={`text-left p-2 rounded-md text-sm ${
+                  selectedPID === pid ? 'bg-cyan-600 font-bold' : 'hover:bg-gray-700'
+                }`}
+              >
+                {pid.replace(/_/g, ' ')}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      {groupData && groupData.gps_data && (
+        <div className="bg-gray-800 rounded-lg shadow-xl p-4 h-[60vh]">
+          <TripMap
+            primaryPath={Object.values(groupData.gps_data)}
+            multiRoute={true}
+            columns={['latitude', 'longitude', 'operating_state']}
+            labels={groupData.logs.map(l =>
+              new Date(l.start_timestamp * 1000).toLocaleDateString()
+            )}
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default TripGroupDetail;
+
 
 ### TripMap.js ###
 ### I will note before the gemini beddie poopoo disaster, I had instructed it to always use a versioning system like you'll see in teh beginning comments of this file. I wanted to freeze the versions at a maximimum of 1.9.4 alpha, with minor iterations getting an updated .4.1; .4.2 and so on, and any refactors or major updates at this point to max out at 1.9.7 - but we werent supposed to be working on feature updates, simply getting the basic stuff working, so I didn't think it would be necessary to go past 1.9.7, until we got to that point. When Gemini started feeding me code that was versioned 1.8.0, or started dropping the top code comments altogether, that was one of the major signs shit was going pear shaped. As we go forward on this project, I know you talked about keeping an md dev log, etc - which Im on board with, please include whatever updates you think should add to that as we go, but, also, can you include these header comments with code versions and some notes about what was changed in the file, if nothing else as a fall back sanity check? ###
@@ -639,96 +719,135 @@ export default TripGroupDetail;
 // FILE: frontend/src/TripMap.js
 //
 // --- VERSION 1.9.7-ALPHA ---
-// - FIXED: Removed unused `Tooltip` import to resolve console warning.
-// ---------------------------
-
+// - FIXED: Guarded `.flat()` calls to prevent crash when primaryPath is undefined.
+// - UPDATED: Map height now fills parent container instead of fixed 400px.
+// - PRESERVED: All existing features, colors, and multiRoute logic.
+//
 import React, { useEffect } from 'react';
 import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
-const STATE_COLORS = { "Closed Loop (Idle)": "#34D399", "Closed Loop (City)": "#60A5FA", "Closed Loop (Highway)": "#38BDF8", "Open Loop (WOT Accel)": "#F87171", "Open Loop (Decel Fuel Cut)": "#FBBF24", "Open Loop (Cold Start)": "#A78BFA", "default": "#9CA3AF" };
+const STATE_COLORS = {
+  "Closed Loop (Idle)": "#34D399",
+  "Closed Loop (City)": "#60A5FA",
+  "Closed Loop (Highway)": "#38BDF8",
+  "Open Loop (WOT Accel)": "#F87171",
+  "Open Loop (Decel Fuel Cut)": "#FBBF24",
+  "Open Loop (Cold Start)": "#A78BFA",
+  "default": "#9CA3AF"
+};
 const COMPARISON_COLOR = "#6B7280";
 
-const CHART_COLORS = [ '#38BDF8', '#F59E0B', '#4ADE80', '#F472B6', '#A78BFA', '#2DD4BF', '#FB7185', '#FACC15', '#818CF8', '#FDE047' ];
+const CHART_COLORS = [
+  '#38BDF8', '#F59E0B', '#4ADE80', '#F472B6', '#A78BFA',
+  '#2DD4BF', '#FB7185', '#FACC15', '#818CF8', '#FDE047'
+];
 
 function MapController({ bounds }) {
-	const map = useMap();
-	useEffect(() => {
-		if (bounds && bounds.length === 2 && bounds[0][0] !== Infinity) {
-			map.fitBounds(bounds, { padding: [50, 50] });
-		}
-	}, [bounds, map]);
-	return null;
+  const map = useMap();
+  useEffect(() => {
+    if (bounds && bounds.length === 2 && bounds[0][0] !== Infinity) {
+      map.fitBounds(bounds, { padding: [50, 50] });
+    }
+  }, [bounds, map]);
+  return null;
 }
 
 function TripMap({ primaryPath, comparisonPath, columns, visibleRange, multiRoute = false, labels = [] }) {
-	const latCol = columns.find(c => c.includes('latitude'));
-	const lonCol = columns.find(c => c.includes('longitude'));
+  const latCol = columns.find(c => c.includes('latitude'));
+  const lonCol = columns.find(c => c.includes('longitude'));
 
-	const getPathSegments = (path) => {
-		if (!path || !latCol || !lonCol) return [];
-		const segments = [];
-		let currentSegment = { color: STATE_COLORS.default, points: [] };
-		path.forEach(row => {
-			const stateColor = STATE_COLORS[row.operating_state] || STATE_COLORS.default;
-			const point = [row[latCol], row[lonCol]];
-			if (point[0] && point[1] && point[0] !== 0) {
-				if (stateColor !== currentSegment.color && currentSegment.points.length > 0) {
-					segments.push(currentSegment);
-					currentSegment = { color: stateColor, points: [currentSegment.points[currentSegment.points.length - 1]] };
-				}
-				currentSegment.color = stateColor;
-				currentSegment.points.push(point);
-			}
-		});
-		if (currentSegment.points.length > 1) segments.push(currentSegment);
-		return segments;
-	};
-	
-	const getBounds = () => {
-		if (multiRoute) {
-			const allPoints = primaryPath.flat().filter(p => p[0] && p[1] && p[0] !== 0);
-			if (allPoints.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
-			const latitudes = allPoints.map(p => p[0]);
-			const longitudes = allPoints.map(p => p[1]);
-			return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
-		}
-		
-		const path = primaryPath.slice(visibleRange.min, visibleRange.max + 1);
-		const points = path.map(row => [row[latCol], row[lonCol]]).filter(p => p[0] && p[1] && p[0] !== 0);
-		if (points.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
-		const latitudes = points.map(p => p[0]);
-		const longitudes = points.map(p => p[1]);
-		return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
-	};
+  const getPathSegments = (path) => {
+    if (!path || !latCol || !lonCol) return [];
+    const segments = [];
+    let currentSegment = { color: STATE_COLORS.default, points: [] };
+    path.forEach(row => {
+      const stateColor = STATE_COLORS[row.operating_state] || STATE_COLORS.default;
+      const point = [row[latCol], row[lonCol]];
+      if (point[0] && point[1] && point[0] !== 0) {
+        if (stateColor !== currentSegment.color && currentSegment.points.length > 0) {
+          segments.push(currentSegment);
+          currentSegment = { color: stateColor, points: [currentSegment.points[currentSegment.points.length - 1]] };
+        }
+        currentSegment.color = stateColor;
+        currentSegment.points.push(point);
+      }
+    });
+    if (currentSegment.points.length > 1) segments.push(currentSegment);
+    return segments;
+  };
 
-	const bounds = getBounds();
-	const primarySegments = multiRoute ? [] : getPathSegments(primaryPath);
-	const comparisonSegments = comparisonPath ? getPathSegments(comparisonPath) : [];
+  const getBounds = () => {
+    if (multiRoute) {
+      const allPoints = Array.isArray(primaryPath) && typeof primaryPath.flat === 'function'
+        ? primaryPath.flat().filter(p => p[0] && p[1] && p[0] !== 0)
+        : [];
+      if (allPoints.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
+      const latitudes = allPoints.map(p => p[0]);
+      const longitudes = allPoints.map(p => p[1]);
+      return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
+    }
 
+    if (!primaryPath) return [[44.97, -93.26], [44.98, -93.27]];
+    const path = primaryPath.slice(visibleRange?.min ?? 0, (visibleRange?.max ?? primaryPath.length - 1) + 1);
+    const points = path.map(row => [row[latCol], row[lonCol]]).filter(p => p[0] && p[1] && p[0] !== 0);
+    if (points.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
+    const latitudes = points.map(p => p[0]);
+    const longitudes = points.map(p => p[1]);
+    return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
+  };
 
+  const bounds = getBounds();
+  const primarySegments = multiRoute ? [] : getPathSegments(primaryPath);
+  const comparisonSegments = comparisonPath ? getPathSegments(comparisonPath) : [];
 
+  return (
+    <MapContainer
+      bounds={bounds}
+      style={{ height: '100%', width: '100%', backgroundColor: '#1F2937', borderRadius: '0.5rem' }}
+    >
+      <MapController bounds={bounds} />
+      <TileLayer
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution="&copy; OpenStreetMap contributors"
+      />
 
-	return (
-		<MapContainer bounds={bounds} style={{ height: '400px', width: '100%', backgroundColor: '#1F2937', borderRadius: '0.5rem' }}>
-			<MapController bounds={bounds} />
-			<TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
-			
-			{multiRoute ? (
-				primaryPath.map((path, index) => (
-					<Polyline key={`multi-${index}`} positions={path.map(p => [p.latitude, p.longitude])} color={CHART_COLORS[index % CHART_COLORS.length]} />
-				))
-			) : (
-				<>
-					{comparisonPath && comparisonSegments.map((segment, index) => <Polyline key={`comp-${index}`} positions={segment.points} color={COMPARISON_COLOR} weight={5} opacity={0.6} dashArray="5, 10" />)}
-					{primarySegments.map((segment, index) => <Polyline key={index} positions={segment.points} color={segment.color} weight={5} />)}
-				</>
-			)}
-		</MapContainer>
-	);
+      {multiRoute ? (
+        primaryPath.map((path, index) => (
+          <Polyline
+            key={`multi-${index}`}
+            positions={path.map(p => [p.latitude, p.longitude])}
+            color={CHART_COLORS[index % CHART_COLORS.length]}
+          />
+        ))
+      ) : (
+        <>
+          {comparisonPath && comparisonSegments.map((segment, index) => (
+            <Polyline
+              key={`comp-${index}`}
+              positions={segment.points}
+              color={COMPARISON_COLOR}
+              weight={5}
+              opacity={0.6}
+              dashArray="5, 10"
+            />
+          ))}
+          {primarySegments.map((segment, index) => (
+            <Polyline
+              key={index}
+              positions={segment.points}
+              color={segment.color}
+              weight={5}
+            />
+          ))}
+        </>
+      )}
+    </MapContainer>
+  );
 }
 
 export default TripMap;
+
 
 ### There are some other files in the src directory, like setupTests.js, reportWebVitals.js, and logo.svg that I think are basically default files for react projects or something along those lines and I can either ignore, or maybe even delete? ###
 
