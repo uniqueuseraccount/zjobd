@@ -1,9 +1,9 @@
 // FILE: frontend/src/TripGroupDetail.js
 //
 // --- VERSION 1.9.7-ALPHA ---
-// - REFACTOR: Replaced inline chart logic with reusable TripChart component.
-// - Map now mirrors LogDetail config: chart→map sync enabled, map→chart sync disabled.
-// - Preserves group-specific PID selection and multi-route map rendering.
+// - UPDATED: Passes `logs` array to TripChart to enable multi-log mode.
+// - REMOVED: Flattened mergedData; TripChart now handles per-log datasets.
+// - Map mirrors LogDetail config: chart→map sync enabled, map→chart sync disabled.
 //
 
 import React, { useState, useEffect } from 'react';
@@ -55,15 +55,13 @@ function TripGroupDetail() {
     return <p className="flex items-center justify-center h-full text-gray-400">{status}</p>;
   }
 
-  // Merge all logs' data into one array for TripChart
-  const mergedData = groupData.logs.flatMap(log => {
-    const logData = groupData.log_data[log.log_id] || [];
-    return logData.map(row => ({
-      ...row,
-      timestamp: row.timestamp,
-      __logStart: log.start_timestamp
-    }));
-  });
+  // Build logs array for TripChart multi-log mode
+  const logsForChart = groupData.logs.map(log => ({
+    log_id: log.log_id,
+    start_timestamp: log.start_timestamp,
+    data: groupData.log_data[log.log_id] || [],
+    columns: Object.keys((groupData.log_data[log.log_id] || [])[0] || [])
+  }));
 
   return (
     <div className="space-y-6">
@@ -71,12 +69,11 @@ function TripGroupDetail() {
         {/* Chart */}
         <div className="md:col-span-3 bg-gray-800 rounded-lg shadow-xl p-4 h-[70vh]">
           <TripChart
-            log={{ data: mergedData, columns: availablePIDs }}
-            comparisonLog={null}
+            logs={logsForChart}                // multi-log mode
             selectedPIDs={selectedPIDs}
             onPIDChange={handlePidChange}
             chartColors={CHART_COLORS}
-            comparisonColors={[]} // unused in group view
+            comparisonColors={[]}              // unused in group view
             visibleRange={visibleRange}
             setVisibleRange={setVisibleRange}
           />
