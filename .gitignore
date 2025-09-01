@@ -6,7 +6,7 @@ program_logs/*
 
 # archives #
 archive/*
-backend/archive/*
+# backend/archive/*
 frontend/archive/*
 
 # md files for ai interaction #

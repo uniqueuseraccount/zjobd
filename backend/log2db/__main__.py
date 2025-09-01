@@ -7,7 +7,7 @@ import logging
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from db_credentials import DB_CONFIG
+    from config.db_credentials import DB_CONFIG
     from log2db.utils import setup_logging
     from log2db.db_manager import DatabaseManager
     from log2db.core import process_log_file

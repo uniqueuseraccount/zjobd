@@ -9,9 +9,9 @@
 
 import logging
 
-WARM_ENGINE_TEMP_F = 170
+WARM_ENGINE_TEMP_F = 160
 HIGH_LOAD_THRESHOLD = 70
-HIGHWAY_SPEED_MPH = 50
+HIGHWAY_SPEED_MPH = 60
 
 def classify_operating_states(data_rows, pids):
 	if not data_rows:
@@ -19,7 +19,7 @@ def classify_operating_states(data_rows, pids):
 
 	# --- PERMANENT FIX: Use the correct, sanitized PID names for lookup ---
 	rpm_pid = 'engine_rpm'
-	speed_pid = 'vehicle_speed'
+	speed_pid = 'gps_speed'
 	load_pid = 'calculated_load_value'
 	coolant_pid = 'engine_coolant_temperature'
 	fuel_status_pid = 'fuel_system_1_status'

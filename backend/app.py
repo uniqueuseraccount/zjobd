@@ -12,11 +12,11 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 try:
-	from db_credentials import DB_CONFIG
+	from config.db_credentials import DB_CONFIG
 	from log2db.utils import setup_logging
 	from log2db.db_manager import DatabaseManager
 	from log2db.core import process_log_file
-	from group_trips import group_trips_logic
+	from archive.group_trips import group_trips_logic
 except ImportError as e:
 	print(f"FATAL: A required file or module could not be imported: {e}", file=sys.stderr)
 	sys.exit(1)
