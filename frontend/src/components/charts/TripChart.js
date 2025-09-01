@@ -8,16 +8,7 @@
 
 import React, { useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-} from 'chart.js';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
 import zoomPlugin from 'chartjs-plugin-zoom';
 import PIDSelector from '../shared/PIDSelector';
 import SamplingIndicator from '../shared/SamplingIndicator';
@@ -31,19 +22,19 @@ export default function TripChart({
   onPIDChange,        // function(index, value)
   chartColors,        // array of colors for PIDs
   visibleRange,       // { min, max }
-  setVisibleRange     // function to update range
+//  setVisibleRange     // function to update range
 }) {
   const chartRef = useRef(null);
 
   // Slice current visible range
   const windowData = useMemo(() => {
-    if (!log?.data) return [];
+    if (!log.data) return [];
     return log.data.slice(visibleRange.min, visibleRange.max + 1);
   }, [log, visibleRange]);
 
   // Build datasets with adaptive sampling
   const { chartData, samplingActive } = useMemo(() => {
-    if (!log?.data) return { chartData: { datasets: [] }, samplingActive: false };
+    if (!log.data) return { chartData: { datasets: [] }, samplingActive: false };
 
     let samplingFlag = false;
     const datasets = [];
@@ -74,7 +65,7 @@ export default function TripChart({
       },
       samplingActive: samplingFlag
     };
-  }, [windowData, selectedPIDs, chartColors]);
+  }, [selectedPIDs, windowData, chartColors]);
 
   const chartOptions = useMemo(() => ({
     responsive: true,
