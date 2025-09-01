@@ -9,8 +9,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
-import TripChart from './components/charts/TripChart';
-import TripMap from './components/maps/TripMap';
+import TripChart from '../charts/TripChart';
+import TripMap from '../maps/TripMap';
 
 const CHART_COLORS = [
   '#38BDF8', '#F59E0B', '#4ADE80', '#F472B6', '#A78BFA',
