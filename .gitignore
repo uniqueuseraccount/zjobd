@@ -2,6 +2,7 @@
 logs/*
 backend/config/db_credentials.py
 program_logs/*
+.vscode*
 
 # archives #
 archive/*
