@@ -9,8 +9,10 @@
 import React, { useState, useEffect, } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
-import TripChart from './TripChart';
-import TripMap from './TripMap';
+import TripChart from '../charts/TripChart';
+import TripMap from '../maps/TripMap';
+import CombinedChartMap from '../charts/CombinedChartMap';
+
 
 const CHART_COLORS = ['#38BDF8', '#F59E0B', '#4ADE80', '#F472B6', '#A78BFA'];
 const COMPARISON_COLORS = ['#0284C7', '#B45309', '#16A34A', '#DB2777', '#7C3AED'];
@@ -147,6 +149,16 @@ function LogDetail() {
           visibleRange={visibleRange}
           multiRoute={false}
           onBoundsRangeChange={handleMapBoundsRangeChange}
+        />
+      </div>
+      {/* Combined ChartMap */}
+      <div className="bg-gray-800 rounded-lg shadow-xl p-4 h-[60vh]">
+        <CombinedChartMap
+          log={log}
+          selectedPIDs={selectedPIDs}
+          chartColors={CHART_COLORS}
+          visibleRange={visibleRange}
+          setVisibleRange={setVisibleRange}
         />
       </div>
     </div>

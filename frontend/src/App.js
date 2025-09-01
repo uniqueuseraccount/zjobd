@@ -7,11 +7,11 @@
 
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import LogList from './LogList';
-import LogDetail from './LogDetail';
-import TripGroupList from './TripGroupList';
-import TripGroupDetail from './TripGroupDetail';
-import Tools from './Tools'; // New
+import LogList from './components/pages/LogList';
+import LogDetail from './components/pages/LogDetail';
+import TripGroupList from './components/pages/TripGroupList';
+import TripGroupDetail from './components/pages/TripGroupDetail';
+import Tools from './components/pages/Tools'; // New
 
 function App() {
   return (

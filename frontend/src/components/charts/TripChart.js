@@ -1,16 +1,16 @@
 // FILE: frontend/src/TripChart.js
 //
-// --- VERSION 1.9.7-ALPHA ---
-// - UPDATED: Supports multi-log datasets for group view.
-// - BEHAVIOR: Each log in a group gets its own dataset line with distinct color.
-// - PRESERVED: PID selection, fixed color mapping, zoom buttons, chart→map sync.
+// --- VERSION 1.9.8-ALPHA ---
+// - UPDATED: Multi-log mode now uses hue families + shade variation per log.
+// - Each PID slot keeps its hue across logs; logs get progressively darker shades.
+// - Preserves PID selection, zoom buttons, chart→map sync.
 //
 
 import React, { useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
 import zoomPlugin from 'chartjs-plugin-zoom';
-import tinycolor from 'tinycolor2'; 
+import tinycolor from 'tinycolor2';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, zoomPlugin);
 
@@ -23,24 +23,20 @@ const PID_COLOR_FAMILIES = [
   '#A78BFA'  // purple
 ];
 
-// Shades from light to dark for each hue family
-// We'll generate these dynamically, but you could hardcode if you prefer exact values
+// Generate progressively darker shades for each hue
 function generateShades(hex, count) {
   const shades = [];
   for (let i = 0; i < count; i++) {
-    // Simple HSL darkening
     const amt = i * (100 / (count + 1)); // spread shades evenly
     shades.push(tinycolor(hex).darken(amt).toHexString());
   }
   return shades;
 }
 
-// Precompute shades for up to N logs
 const MAX_LOGS = 6; // adjust as needed
 const PID_COLOR_SHADES = PID_COLOR_FAMILIES.map(base =>
   generateShades(base, MAX_LOGS)
 );
-
 
 function PidSelector({ color, options, onChange, selectedValue }) {
   return (
@@ -64,8 +60,8 @@ export default function TripChart({
   logs,               // For multi-log: array of { log_id, start_timestamp, data, columns }
   selectedPIDs,
   onPIDChange,
-  chartColors,
-  comparisonColors,
+  chartColors = PID_COLOR_FAMILIES,
+  comparisonColors = [],
   comparisonLog,      // Only used in single-log mode
   visibleRange,
   setVisibleRange
@@ -77,10 +73,10 @@ export default function TripChart({
 
   const setZoom = (minutes) => {
     if (!chartRef.current) return;
-    const chart = chartRef.current;
     const baseData = isGroupMode ? logs[0].data : log.data;
     if (!baseData || baseData.length < 2) return;
 
+    const chart = chartRef.current;
     const timeDiff = baseData[1].timestamp - baseData[0].timestamp;
     const pointsPerSecond = timeDiff > 0 ? 1 / timeDiff : 1;
     const pointsToShow = Math.round(minutes * 60 * pointsPerSecond);
@@ -92,34 +88,29 @@ export default function TripChart({
     setVisibleRange({ min: currentMin, max });
     setTimeout(() => { syncingRef.current = false; }, 0);
   };
-
-
-
-
   const chartData = useMemo(() => {
     if (isGroupMode) {
-      // Multi-log mode: one dataset per log per selected PID
       const datasets = [];
       logs.forEach((logItem, logIndex) => {
         selectedPIDs.forEach((pid, slotIndex) => {
-            if (pid === 'none') return;
-            datasets.push({
-                label: `${new Date(logItem.start_timestamp * 1000).toLocaleDateString()} — ${pid}`,
-                data: logItem.data.map(row => ({
-                    x: row.timestamp - logItem.start_timestamp,
-                    y: row[pid]
-                })),
-                borderColor: PID_COLOR_SHADES[slotIndex][logIndex % MAX_LOGS],
-                backgroundColor: tinycolor(PID_COLOR_SHADES[slotIndex][logIndex % MAX_LOGS]).setAlpha(0.5).toRgbString(),
-                tension: 0.4,
-                pointRadius: 0,
-                borderWidth: 2
-            });
+          if (pid === 'none') return;
+          const color = PID_COLOR_SHADES[slotIndex][logIndex % MAX_LOGS];
+          datasets.push({
+            label: `${new Date(logItem.start_timestamp * 1000).toLocaleDateString()} — ${pid}`,
+            data: logItem.data.map(row => ({
+              x: row.timestamp - logItem.start_timestamp,
+              y: row[pid]
+            })),
+            borderColor: color,
+            backgroundColor: tinycolor(color).setAlpha(0.5).toRgbString(),
+            tension: 0.4,
+            pointRadius: 0,
+            borderWidth: 2
+          });
         });
       });
       return { datasets };
     } else {
-      // Single-log mode (LogDetail)
       if (!log) return null;
       const datasets = [];
       selectedPIDs.forEach((pid, slotIndex) => {
@@ -165,7 +156,6 @@ export default function TripChart({
         }
       }
     };
-
     if (!isGroupMode) {
       selectedPIDs.forEach((pid, slotIndex) => {
         if (pid === 'none') return;
@@ -184,7 +174,6 @@ export default function TripChart({
         ticks: { color: '#9CA3AF' }
       };
     }
-
     return {
       responsive: true,
       maintainAspectRatio: false,
@@ -216,14 +205,14 @@ export default function TripChart({
     };
   }, [isGroupMode, log, selectedPIDs, chartColors, setVisibleRange]);
 
-  if (isGroupMode && logs.length === 0) return null;
-  if (!isGroupMode && !log) return null;
-
   const pidOptions = isGroupMode
     ? logs[0]?.columns?.filter(c => !['data_id', 'timestamp', 'operating_state'].includes(c)) || []
     : log.columns.filter(c => !['data_id', 'timestamp', 'operating_state'].includes(c));
 
-  return (
+  if (isGroupMode && logs.length === 0) return null;
+  if (!isGroupMode && !log) return null;
+
+    return (
     <div className="bg-gray-800 rounded-lg shadow-xl p-4">
       <div className="flex items-center space-x-4 mb-2">
         {selectedPIDs.map((pid, index) => (
@@ -236,13 +225,35 @@ export default function TripChart({
           />
         ))}
       </div>
+
       <div className="flex justify-end items-center space-x-2 mb-2">
         <span className="text-gray-400 text-sm">Zoom:</span>
-        <button onClick={() => setZoom(2)} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">2min</button>
-        <button onClick={() => setZoom(5)} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">5min</button>
-        <button onClick={() => setZoom(10)} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">10min</button>
-        <button onClick={() => chartRef.current.resetZoom()} className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600">Reset</button>
+        <button
+          onClick={() => setZoom(2)}
+          className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600"
+        >
+          2min
+        </button>
+        <button
+          onClick={() => setZoom(5)}
+          className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600"
+        >
+          5min
+        </button>
+        <button
+          onClick={() => setZoom(10)}
+          className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600"
+        >
+          10min
+        </button>
+        <button
+          onClick={() => chartRef.current.resetZoom()}
+          className="bg-gray-700 px-2 py-1 text-xs rounded hover:bg-gray-600"
+        >
+          Reset
+        </button>
       </div>
+
       <div className="h-[56vh]">
         <Line ref={chartRef} options={chartOptions} data={chartData} />
       </div>
