@@ -1,37 +1,32 @@
-// FILE: frontend/src/utils/mapUtils.js
-//
-// --- VERSION 0.1.0 ---
-// - Provides getAverageHeading for CombinedChartMap.
-// - Heading is in degrees, 0 = north, 90 = east, etc.
+// --- VERSION 0.1.2 ---
+// - getAverageHeading calculates mean compass heading for a path.
 
 export function getAverageHeading(data, latKey = 'latitude', lonKey = 'longitude') {
-  if (!data || data.length < 2) return 0;
-
-  let totalHeading = 0;
+  if (!Array.isArray(data) || data.length < 2) return 0;
+  let sumX = 0;
+  let sumY = 0;
   let count = 0;
 
   for (let i = 1; i < data.length; i++) {
     const prev = data[i - 1];
     const curr = data[i];
-    if (
-      typeof prev[latKey] !== 'number' ||
-      typeof prev[lonKey] !== 'number' ||
-      typeof curr[latKey] !== 'number' ||
-      typeof curr[lonKey] !== 'number'
-    ) continue;
+    const lat1 = prev?.[latKey];
+    const lon1 = prev?.[lonKey];
+    const lat2 = curr?.[latKey];
+    const lon2 = curr?.[lonKey];
+    if ([lat1, lon1, lat2, lon2].some(v => typeof v !== 'number')) continue;
 
-    const dLon = (curr[lonKey] - prev[lonKey]) * (Math.PI / 180);
-    const y = Math.sin(dLon) * Math.cos(curr[latKey] * Math.PI / 180);
-    const x =
-      Math.cos(prev[latKey] * Math.PI / 180) * Math.sin(curr[latKey] * Math.PI / 180) -
-      Math.sin(prev[latKey] * Math.PI / 180) * Math.cos(curr[latKey] * Math.PI / 180) * Math.cos(dLon);
-
-    let heading = Math.atan2(y, x) * (180 / Math.PI);
-    if (heading < 0) heading += 360;
-
-    totalHeading += heading;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+    const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+              Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+    const heading = Math.atan2(y, x) * 180 / Math.PI;
+    sumX += Math.cos(heading * Math.PI / 180);
+    sumY += Math.sin(heading * Math.PI / 180);
     count++;
   }
 
-  return count > 0 ? totalHeading / count : 0;
+  if (count === 0) return 0;
+  const avg = Math.atan2(sumY / count, sumX / count) * 180 / Math.PI;
+  return (avg + 360) % 360;
 }
