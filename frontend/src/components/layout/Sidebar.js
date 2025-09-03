@@ -1,5 +1,5 @@
-// --- VERSION 0.0.1 ---
-// - Minimal sidebar placeholder.
+// --- VERSION 0.1.0 ---
+// - Minimal sidebar with navigation links.
 
 import React from 'react';
 import { Link } from 'react-router-dom';

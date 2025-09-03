@@ -1,4 +1,4 @@
-// --- VERSION 0.1.2 ---
+// --- VERSION 0.1.0 ---
 // - getAverageHeading calculates mean compass heading for a path.
 
 export function getAverageHeading(data, latKey = 'latitude', lonKey = 'longitude') {

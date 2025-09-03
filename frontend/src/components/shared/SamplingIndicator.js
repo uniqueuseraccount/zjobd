@@ -1,18 +1,13 @@
-// FILE: frontend/src/components/shared/SamplingIndicator.js
-//
 // --- VERSION 0.1.0 ---
-// - Shows "Data Sampled" in lime green if active, "Full Data" in dim grey if not.
+// - Shows a small badge when adaptive sampling is active.
 
 import React from 'react';
 
-export default function SamplingIndicator({ active }) {
+export default function SamplingIndicator({ active = false }) {
+  if (!active) return null;
   return (
-    <div
-      className={`text-xs text-right ${
-        active ? 'text-lime-400' : 'text-gray-500'
-      }`}
-    >
-      {active ? 'Data Sampled' : 'Full Data'}
+    <div className="text-xs text-yellow-400 mb-1">
+      Sampling active — data reduced for performance
     </div>
   );
 }

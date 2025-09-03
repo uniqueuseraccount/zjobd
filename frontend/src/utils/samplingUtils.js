@@ -1,4 +1,4 @@
-// --- VERSION 0.0.1 ---
+// --- VERSION 0.1.0 ---
 // - Simple downsampling by picking evenly spaced points.
 
 export function sampleData(dataArray, targetCount) {

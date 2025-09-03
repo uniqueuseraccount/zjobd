@@ -1,6 +1,5 @@
-// --- VERSION 0.0.1 ---
+// --- VERSION 0.1.0 ---
 // - Centralized visibleRange state logic.
-// - Provides reset and pan helpers for charts/maps.
 
 import { useState, useCallback } from 'react';
 import { getDefaultVisibleRange, DEFAULT_WINDOW_SECONDS } from '../utils/rangeUtils';

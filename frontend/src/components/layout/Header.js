@@ -1,5 +1,5 @@
-// --- VERSION 0.0.1 ---
-// - Minimal header placeholder.
+// --- VERSION 0.1.0 ---
+// - Minimal header with app title.
 
 import React from 'react';
 
