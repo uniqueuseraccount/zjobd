@@ -1,5 +1,5 @@
-// --- VERSION 0.1.0 ---
-// - Displays trip/log info or status messages.
+// --- VERSION 0.2.0 ---
+// - Displays trip metadata and group log count.
 
 import React from 'react';
 

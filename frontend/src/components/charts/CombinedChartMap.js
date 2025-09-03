@@ -1,11 +1,7 @@
-// FILE: src/components/charts/CombinedChartMap.js
-//
-// --- VERSION 0.3.1-ALPHA ---
-// - Defensive defaults for selectedPIDs, chartColors, visibleRange.
-// - All memos depend on windowData (not raw log) to quiet ESLint.
-// - Linear y-scale with padding instead of log scale (safer with zeros).
-// - Null-safe map rotation and midline anchoring.
-// - Click-to-pan by half window.
+// --- VERSION 0.9.0 ---
+// - Displays TripMap as background with overlaid chart synced to visibleRange.
+// - Click left/right halves to pan window.
+// - Anchors y-scale to most variable PID in current window.
 
 import React, { useMemo, useRef, useState } from 'react';
 import TripMap from '../maps/TripMap';
@@ -32,7 +28,6 @@ export default function CombinedChartMap({
 
   const windowSize = Math.max(1, (visibleRange?.max ?? 0) - (visibleRange?.min ?? 0));
 
-  // Slice current window
   const windowData = useMemo(() => {
     const min = Math.max(0, visibleRange?.min ?? 0);
     const max = Math.min((dataRef.length - 1), visibleRange?.max ?? 0);
@@ -40,7 +35,6 @@ export default function CombinedChartMap({
     return dataRef.slice(min, max + 1);
   }, [dataRef, visibleRange]);
 
-  // Anchor PID = most variable PID in window
   const anchorPID = useMemo(() => {
     let maxVar = -Infinity;
     let pidName = null;
@@ -57,7 +51,6 @@ export default function CombinedChartMap({
     return pidName;
   }, [windowData, selectedPIDs]);
 
-  // Median of anchor PID in current window
   const anchorMedian = useMemo(() => {
     if (!anchorPID || windowData.length === 0) return 0;
     const vals = windowData.map(r => r?.[anchorPID]).filter(v => typeof v === 'number').sort((a, b) => a - b);
@@ -66,12 +59,10 @@ export default function CombinedChartMap({
     return vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
   }, [anchorPID, windowData]);
 
-  // Average heading for rotation
   const avgHeading = useMemo(() => {
     return getAverageHeading(windowData, mapColumns[0], mapColumns[1]) || 0;
   }, [windowData, mapColumns]);
 
-  // Chart datasets
   const chartData = useMemo(() => {
     const datasets = [];
     (selectedPIDs || []).forEach((pid, idx) => {
@@ -91,7 +82,6 @@ export default function CombinedChartMap({
     };
   }, [windowData, selectedPIDs, chartColors]);
 
-  // Safe y-bounds with padding anchored to median
   const chartOptions = useMemo(() => {
     const allVals = (selectedPIDs || [])
       .filter(pid => pid && pid !== 'none')
@@ -115,52 +105,47 @@ export default function CombinedChartMap({
       scales: {
         y: { type: 'linear', min: yMin, max: yMax, ticks: { color: '#9CA3AF' } },
         x: { ticks: { color: '#9CA3AF' } }
-      }
-    };
-  }, [windowData, selectedPIDs, anchorMedian, animating]);
-
-  // Click-to-pan handlers
-  const handlePanLeft = () => {
-    if (!dataRef.length) return;
-    setAnimating(true);
-    const shift = Math.max(1, Math.floor(windowSize / 2));
-    const min = Math.max(0, (visibleRange.min ?? 0) - shift);
-    const max = min + windowSize;
-    setVisibleRange({ min, max });
-    setTimeout(() => setAnimating(false), 500);
+    }
   };
+}, [windowData, selectedPIDs, anchorMedian, animating]);
 
-  const handlePanRight = () => {
-    if (!dataRef.length) return;
-    setAnimating(true);
-    const shift = Math.max(1, Math.floor(windowSize / 2));
-    const maxIdx = dataRef.length - 1;
-    const max = Math.min(maxIdx, (visibleRange.max ?? 0) + shift);
-    const min = Math.max(0, max - windowSize);
-    setVisibleRange({ min, max });
-    setTimeout(() => setAnimating(false), 500);
-  };
+const handlePanLeft = () => {
+  if (!dataRef.length) return;
+  setAnimating(true);
+  const shift = Math.max(1, Math.floor(windowSize / 2));
+  const min = Math.max(0, (visibleRange.min ?? 0) - shift);
+  const max = min + windowSize;
+  setVisibleRange({ min, max });
+  setTimeout(() => setAnimating(false), 500);
+};
 
-  return (
-    <div className="relative w-full aspect-square bg-gray-900 rounded-lg overflow-hidden">
-      {/* Map background */}
-      <div className="absolute inset-0 transition-transform duration-500" style={{ transform: `rotate(${avgHeading}deg)` }}>
-        <TripMap
-          primaryPath={windowData}
-          columns={mapColumns}
-          visibleRange={visibleRange}
-          onBoundsRangeChange={() => {}}
-          multiRoute={false}
-        />
-      </div>
+const handlePanRight = () => {
+  if (!dataRef.length) return;
+  setAnimating(true);
+  const shift = Math.max(1, Math.floor(windowSize / 2));
+  const maxIdx = dataRef.length - 1;
+  const max = Math.min(maxIdx, (visibleRange.max ?? 0) + shift);
+  const min = Math.max(0, max - windowSize);
+  setVisibleRange({ min, max });
+  setTimeout(() => setAnimating(false), 500);
+};
 
-      {/* Chart overlay */}
-      <div className="absolute bottom-0 left-0 w-full h-1/3 bg-black/40 backdrop-blur-sm">
-        <Line ref={chartRef} options={chartOptions} data={chartData} />
-        {/* Click zones */}
-        <div className="absolute top-0 left-0 h-full w-1/2 cursor-pointer" onClick={handlePanLeft} />
-        <div className="absolute top-0 right-0 h-full w-1/2 cursor-pointer" onClick={handlePanRight} />
-      </div>
+return (
+  <div className="relative w-full aspect-square bg-gray-900 rounded-lg overflow-hidden">
+    <div className="absolute inset-0 transition-transform duration-500" style={{ transform: `rotate(${avgHeading}deg)` }}>
+      <TripMap
+        primaryPath={windowData}
+        columns={mapColumns}
+        visibleRange={visibleRange}
+        onBoundsRangeChange={() => {}}
+        multiRoute={false}
+      />
     </div>
-  );
+    <div className="absolute bottom-0 left-0 w-full h-1/3 bg-black/40 backdrop-blur-sm">
+      <Line ref={chartRef} options={chartOptions} data={chartData} />
+      <div className="absolute top-0 left-0 h-full w-1/2 cursor-pointer" onClick={handlePanLeft} />
+      <div className="absolute top-0 right-0 h-full w-1/2 cursor-pointer" onClick={handlePanRight} />
+    </div>
+  </div>
+);
 }

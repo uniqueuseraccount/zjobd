@@ -1,8 +1,5 @@
-// FILE: src/components/shared/PIDSelector.js
-//
-// --- VERSION 0.0.1 ---
-// - First functional implementation.
-// - Simple select with color swatch, null-safe options.
+// --- VERSION 0.0.2 ---
+// - Dropdown selector with color swatch for PID selection.
 
 import React from 'react';
 

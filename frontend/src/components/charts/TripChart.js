@@ -1,10 +1,7 @@
-// FILE: src/components/charts/TripChart.js
-//
-// --- VERSION 0.3.0-ALPHA ---
-// - Defensive defaults for selectedPIDs, onPIDChange, chartColors.
-// - Null-safe log?.data and log?.columns.
-// - ESLint-friendly deps: memos depend on visibleRange and dataRef.
-// - Keeps adaptive sampling and SamplingIndicator.
+/// --- VERSION 0.9.0 ---
+// - Renders PID selectors, sampling indicator, and a Chart.js line chart.
+// - Uses adaptive sampling for performance.
+// - Fully wired to log.data / log.columns from backend.
 
 import React, { useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
@@ -19,17 +16,16 @@ import { sampleData } from '../../utils/samplingUtils';
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, zoomPlugin);
 
 export default function TripChart({
-  log,                           // { data, columns }
-  selectedPIDs = [],             // array of PID names
-  onPIDChange = () => {},        // function(index, value)
-  chartColors = [],              // array of colors for PIDs
+  log,
+  selectedPIDs = [],
+  onPIDChange = () => {},
+  chartColors = [],
   visibleRange = { min: 0, max: 0 }
 }) {
   const chartRef = useRef(null);
   const dataRef = log?.data || [];
   const colsRef = log?.columns || [];
 
-  // Slice current visible range
   const windowData = useMemo(() => {
     const min = Math.max(0, visibleRange?.min ?? 0);
     const max = Math.min((dataRef.length - 1), visibleRange?.max ?? 0);
@@ -37,7 +33,6 @@ export default function TripChart({
     return dataRef.slice(min, max + 1);
   }, [dataRef, visibleRange]);
 
-  // Build datasets with adaptive sampling
   const { chartData, samplingActive } = useMemo(() => {
     let samplingFlag = false;
     const datasets = [];
@@ -86,7 +81,6 @@ export default function TripChart({
 
   return (
     <div className="bg-gray-800 rounded-lg shadow-xl p-4">
-      {/* PID selectors */}
       <div className="flex items-center space-x-4 mb-2">
         {(selectedPIDs || []).map((pid, index) => (
           <PIDSelector
@@ -98,11 +92,7 @@ export default function TripChart({
           />
         ))}
       </div>
-
-      {/* Sampling indicator */}
       <SamplingIndicator active={samplingActive} />
-
-      {/* Chart */}
       <div className="h-[56vh]">
         <Line ref={chartRef} options={chartOptions} data={chartData} />
       </div>

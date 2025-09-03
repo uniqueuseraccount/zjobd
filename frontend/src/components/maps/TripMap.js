@@ -1,10 +1,6 @@
-// --- VERSION 0.3.1.9.8 -ALPHA ---
-// - Ensured default export of TripMap component.
-// - Guards for columns/paths and stable bounds.
-// - Fills parent container; supports multiRoute overlay.
-//
-// https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png
-// https://tile.openstreetmap.bzh/ca/{z}/{x}/{y}.png
+// --- VERSION 0.9.0 ---
+// - Renders Leaflet map with colored segments by operating state.
+// - Supports multiRoute mode and visibleRange slicing.
 
 import React, { useEffect } from 'react';
 import { MapContainer, TileLayer, Polyline, useMap, useMapEvents } from 'react-leaflet';
@@ -46,8 +42,8 @@ export default function TripMap({
   multiRoute = false,
   onBoundsRangeChange = () => {}
 }) {
-  const latCol = Array.isArray(columns) ? columns.find(c => c.includes('lat')) || 'latitude' : 'latitude';
-  const lonCol = Array.isArray(columns) ? columns.find(c => c.includes('lon')) || 'longitude' : 'longitude';
+  const latCol = columns.find(c => c.includes('lat')) || 'latitude';
+  const lonCol = columns.find(c => c.includes('lon')) || 'longitude';
 
   const getPathSegments = (path) => {
     if (!Array.isArray(path)) return [];
@@ -70,12 +66,6 @@ export default function TripMap({
   };
 
   const getBounds = () => {
-    if (multiRoute && Array.isArray(primaryPath)) {
-      const allPoints = primaryPath.flat().filter(p => p && typeof p[latCol] === 'number' && typeof p[lonCol] === 'number' && p[latCol] !== 0 && p[lonCol] !== 0);
-      if (!allPoints.length) return [[44.97, -93.26], [44.98, -93.27]];
-      const lats = allPoints.map(p => p[latCol]); const lons = allPoints.map(p => p[lonCol]);
-      return [[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]];
-    }
     const arr = Array.isArray(primaryPath) ? primaryPath : [];
     const min = Math.max(0, visibleRange?.min ?? 0);
     const max = Math.min((arr.length - 1), visibleRange?.max ?? 0);
@@ -87,7 +77,7 @@ export default function TripMap({
   };
 
   const bounds = getBounds();
-  const primarySegments = (multiRoute || !Array.isArray(primaryPath)) ? [] : getPathSegments(primaryPath);
+  const primarySegments = getPathSegments(primaryPath);
   const comparisonSegments = Array.isArray(comparisonPath) ? getPathSegments(comparisonPath) : [];
 
   return (
@@ -95,20 +85,12 @@ export default function TripMap({
       <MapController bounds={bounds} />
       <MapSync />
       <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors &copy; CARTO" />
-      {multiRoute ? (
-        (Array.isArray(primaryPath) ? primaryPath : []).map((path, idx) => (
-          <Polyline key={`multi-${idx}`} positions={path.map(p => [p?.[latCol], p?.[lonCol]])} color={CHART_COLORS[idx % CHART_COLORS.length]} />
-        ))
-      ) : (
-        <>
-          {comparisonSegments.map((seg, idx) => (
-            <Polyline key={`comp-${idx}`} positions={seg.points} color={COMPARISON_COLOR} weight={5} opacity={0.6} dashArray="5, 10" />
-          ))}
-          {primarySegments.map((seg, idx) => (
-            <Polyline key={`prim-${idx}`} positions={seg.points} color={seg.color} weight={5} />
-          ))}
-        </>
-      )}
+      {comparisonSegments.map((seg, idx) => (
+        <Polyline key={`comp-${idx}`} positions={seg.points} color={COMPARISON_COLOR} weight={5} opacity={0.6} dashArray="5, 10" />
+      ))}
+      {primarySegments.map((seg, idx) => (
+        <Polyline key={`prim-${idx}`} positions={seg.points} color={seg.color} weight={5} />
+      ))}
     </MapContainer>
   );
 }

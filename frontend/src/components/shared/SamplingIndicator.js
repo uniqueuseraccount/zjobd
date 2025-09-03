@@ -1,5 +1,5 @@
-// --- VERSION 0.1.0 ---
-// - Shows a small badge when adaptive sampling is active.
+// --- VERSION 0.2.0 ---
+// - Displays a badge when sampling is active.
 
 import React from 'react';
 

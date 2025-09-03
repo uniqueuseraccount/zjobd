@@ -1,6 +1,5 @@
 // --- VERSION 0.2.0 ---
-// - Default window length constant.
-// - getDefaultVisibleRange calculates index bounds from desired seconds.
+// - Calculates default visible range based on timestamp spacing.
 
 export const DEFAULT_WINDOW_SECONDS = 60;
 

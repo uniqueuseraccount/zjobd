@@ -1,15 +1,14 @@
-// --- VERSION 0.5.2 ALPHA ---
-// - Integrates InfoBar for trip/group info display.
-// - Uses local PID state with PIDSelector in TripChart.
-// - Shared visibleRange state via useVisibleRange hook.
-// - Console logs for fetch lifecycle to aid debugging.
+// --- VERSION 0.9.0 ---
+// - Restored full functionality from pre‑refactor version.
+// - Fetches log data, trip info, and group logs from backend.
+// - Passes PID state to TripChart and CombinedChartMap.
+// - Displays InfoBar with trip/group info.
 
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import TripChart from '../charts/TripChart';
 import CombinedChartMap from '../charts/CombinedChartMap';
 import InfoBar from '../shared/InfoBar';
-import { useVisibleRange } from '../../hooks/useVisibleRange';
 import { DEFAULT_WINDOW_SECONDS, getDefaultVisibleRange } from '../../utils/rangeUtils';
 
 export default function LogDetail() {
@@ -17,11 +16,10 @@ export default function LogDetail() {
   const [log, setLog] = useState(null);
   const [tripInfo, setTripInfo] = useState(null);
   const [groupLogs, setGroupLogs] = useState([]);
+  const [visibleRange, setVisibleRange] = useState({ min: 0, max: 0 });
 
   const [selectedPIDs, setSelectedPIDs] = useState(['engine_rpm', 'vehicle_speed']);
   const chartColors = ['#FF4D4D', '#00E676'];
-
-  const { visibleRange, setVisibleRange, resetRange } = useVisibleRange([]);
 
   const handlePIDChange = (index, value) => {
     const updated = [...selectedPIDs];
@@ -31,11 +29,9 @@ export default function LogDetail() {
 
   useEffect(() => {
     if (!logId) return;
-    console.log(`[LogDetail] fetching /api/logs/${logId}/data`);
     fetch(`/api/logs/${logId}/data`)
       .then(res => res.json())
       .then(data => {
-        console.log(`[LogDetail] loaded log ${logId} with ${Array.isArray(data?.data) ? data.data.length : 0} rows`);
         setLog({ data: data.data, columns: data.columns });
         setTripInfo(data.trip_info || null);
         setGroupLogs(data.group_logs || []);
@@ -45,7 +41,7 @@ export default function LogDetail() {
         console.error(`[LogDetail] Error fetching log ${logId}:`, err);
         setLog(null);
       });
-  }, [logId, setVisibleRange]);
+  }, [logId]);
 
   if (!log) return <div className="text-gray-400">No log selected</div>;
 

@@ -1,5 +1,5 @@
-// --- VERSION 0.1.0 ---
-// - Simple downsampling by picking evenly spaced points.
+// --- VERSION 0.2.0 ---
+// - Downsamples array to target count using fixed step.
 
 export function sampleData(dataArray, targetCount) {
   if (!Array.isArray(dataArray) || dataArray.length <= targetCount) return dataArray;
