@@ -1,25 +1,17 @@
-// FILE: frontend/src/components/charts/CombinedChartMap.js
+// FILE: src/components/charts/CombinedChartMap.js
 //
-// --- VERSION 0.4.0-ALPHA ---
-// - Map background, chart overlay at bottom 1/3 height.
-// - Fixed 30s window (~10 points), no sampling.
-// - Rotates map so log time flows left→right.
-// - Midline anchoring to median of anchor PID.
-// - Click-to-pan left/right with smooth animation.
-//
+// --- VERSION 0.3.1-ALPHA ---
+// - Defensive defaults for selectedPIDs, chartColors, visibleRange.
+// - All memos depend on windowData (not raw log) to quiet ESLint.
+// - Linear y-scale with padding instead of log scale (safer with zeros).
+// - Null-safe map rotation and midline anchoring.
+// - Click-to-pan by half window.
 
 import React, { useMemo, useRef, useState } from 'react';
 import TripMap from '../maps/TripMap';
 import { Line } from 'react-chartjs-2';
 import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
+  Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend
 } from 'chart.js';
 import zoomPlugin from 'chartjs-plugin-zoom';
 import { getAverageHeading } from '../../utils/mapUtils';
@@ -28,31 +20,33 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 export default function CombinedChartMap({
   log,
-  selectedPIDs,
-  chartColors,
-  visibleRange,
-  setVisibleRange,
+  selectedPIDs = [],
+  chartColors = [],
+  visibleRange = { min: 0, max: 0 },
+  setVisibleRange = () => {},
   mapColumns = ['latitude', 'longitude', 'operating_state']
 }) {
   const chartRef = useRef(null);
   const [animating, setAnimating] = useState(false);
+  const dataRef = log?.data || [];
 
-  const windowSize = visibleRange.max - visibleRange.min;
+  const windowSize = Math.max(1, (visibleRange?.max ?? 0) - (visibleRange?.min ?? 0));
 
-  // Slice current 30s window
+  // Slice current window
   const windowData = useMemo(() => {
-    if (!log?.data) return [];
-    return log.data.slice(visibleRange.min, visibleRange.max + 1);
-  }, [log, visibleRange]);
+    const min = Math.max(0, visibleRange?.min ?? 0);
+    const max = Math.min((dataRef.length - 1), visibleRange?.max ?? 0);
+    if (dataRef.length === 0 || max < min) return [];
+    return dataRef.slice(min, max + 1);
+  }, [dataRef, visibleRange]);
 
-  // Anchor PID = most variable PID in current selection
+  // Anchor PID = most variable PID in window
   const anchorPID = useMemo(() => {
-    if (!log?.data) return null;
     let maxVar = -Infinity;
     let pidName = null;
-    selectedPIDs.forEach(pid => {
-      if (pid === 'none') return;
-      const vals = log.data.map(r => r[pid]).filter(v => typeof v === 'number');
+    (selectedPIDs || []).forEach(pid => {
+      if (!pid || pid === 'none') return;
+      const vals = windowData.map(r => r?.[pid]).filter(v => typeof v === 'number');
       if (!vals.length) return;
       const range = Math.max(...vals) - Math.min(...vals);
       if (range > maxVar) {
@@ -61,31 +55,31 @@ export default function CombinedChartMap({
       }
     });
     return pidName;
-  }, [log, selectedPIDs]);
+  }, [windowData, selectedPIDs]);
 
   // Median of anchor PID in current window
   const anchorMedian = useMemo(() => {
-    if (!anchorPID || !windowData.length) return 0;
-    const vals = windowData.map(r => r[anchorPID]).filter(v => typeof v === 'number').sort((a, b) => a - b);
+    if (!anchorPID || windowData.length === 0) return 0;
+    const vals = windowData.map(r => r?.[anchorPID]).filter(v => typeof v === 'number').sort((a, b) => a - b);
+    if (vals.length === 0) return 0;
     const mid = Math.floor(vals.length / 2);
     return vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
   }, [anchorPID, windowData]);
 
   // Average heading for rotation
   const avgHeading = useMemo(() => {
-    return getAverageHeading(windowData, mapColumns[0], mapColumns[1]);
+    return getAverageHeading(windowData, mapColumns[0], mapColumns[1]) || 0;
   }, [windowData, mapColumns]);
 
   // Chart datasets
   const chartData = useMemo(() => {
-    if (!log?.data) return { datasets: [] };
     const datasets = [];
-    selectedPIDs.forEach((pid, idx) => {
-      if (pid === 'none') return;
+    (selectedPIDs || []).forEach((pid, idx) => {
+      if (!pid || pid === 'none') return;
       datasets.push({
         label: pid,
-        data: windowData.map(row => row[pid]),
-        borderColor: chartColors[idx],
+        data: windowData.map(row => row?.[pid]),
+        borderColor: chartColors[idx] || '#38BDF8',
         pointRadius: 0,
         borderWidth: 2,
         tension: 0.4
@@ -97,47 +91,53 @@ export default function CombinedChartMap({
     };
   }, [windowData, selectedPIDs, chartColors]);
 
-  // Chart options with midline anchoring
-  const chartOptions = useMemo(() => ({
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: { duration: animating ? 500 : 0 },
-    plugins: {
-      legend: { display: true, labels: { color: '#FFFFFF' } },
-      zoom: { pan: { enabled: false }, zoom: { enabled: false } }
-    },
-    scales: {
-      y: {
-        type: 'logarithmic',
-        min: Math.min(anchorMedian / 10, ...windowData.map(r => Math.min(...selectedPIDs.map(pid => r[pid] || Infinity)))),
-        max: Math.max(anchorMedian * 10, ...windowData.map(r => Math.max(...selectedPIDs.map(pid => r[pid] || -Infinity)))),
-        ticks: { color: '#9CA3AF' }
+  // Safe y-bounds with padding anchored to median
+  const chartOptions = useMemo(() => {
+    const allVals = (selectedPIDs || [])
+      .filter(pid => pid && pid !== 'none')
+      .flatMap(pid => windowData.map(r => r?.[pid]).filter(v => typeof v === 'number'));
+
+    const minVal = allVals.length ? Math.min(...allVals) : 0;
+    const maxVal = allVals.length ? Math.max(...allVals) : 1;
+    const pad = (maxVal - minVal) * 0.1 || 1;
+
+    const yMin = Math.min(minVal - pad, anchorMedian - pad);
+    const yMax = Math.max(maxVal + pad, anchorMedian + pad);
+
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: animating ? 500 : 0 },
+      plugins: {
+        legend: { display: true, labels: { color: '#FFFFFF' } },
+        zoom: { pan: { enabled: false }, zoom: { enabled: false } }
       },
-      x: { ticks: { color: '#9CA3AF' } }
-    }
-  }), [windowData, selectedPIDs, anchorMedian, animating]);
+      scales: {
+        y: { type: 'linear', min: yMin, max: yMax, ticks: { color: '#9CA3AF' } },
+        x: { ticks: { color: '#9CA3AF' } }
+      }
+    };
+  }, [windowData, selectedPIDs, anchorMedian, animating]);
 
   // Click-to-pan handlers
   const handlePanLeft = () => {
-    if (!log?.data) return;
+    if (!dataRef.length) return;
     setAnimating(true);
-    const shift = Math.floor(windowSize / 2);
-    setVisibleRange({
-      min: Math.max(0, visibleRange.min - shift),
-      max: Math.max(windowSize, visibleRange.max - shift)
-    });
+    const shift = Math.max(1, Math.floor(windowSize / 2));
+    const min = Math.max(0, (visibleRange.min ?? 0) - shift);
+    const max = min + windowSize;
+    setVisibleRange({ min, max });
     setTimeout(() => setAnimating(false), 500);
   };
 
   const handlePanRight = () => {
-    if (!log?.data) return;
+    if (!dataRef.length) return;
     setAnimating(true);
-    const shift = Math.floor(windowSize / 2);
-    const maxIndex = log.data.length - 1;
-    setVisibleRange({
-      min: Math.min(maxIndex - windowSize, visibleRange.min + shift),
-      max: Math.min(maxIndex, visibleRange.max + shift)
-    });
+    const shift = Math.max(1, Math.floor(windowSize / 2));
+    const maxIdx = dataRef.length - 1;
+    const max = Math.min(maxIdx, (visibleRange.max ?? 0) + shift);
+    const min = Math.max(0, max - windowSize);
+    setVisibleRange({ min, max });
     setTimeout(() => setAnimating(false), 500);
   };
 
@@ -148,7 +148,6 @@ export default function CombinedChartMap({
         <TripMap
           primaryPath={windowData}
           columns={mapColumns}
-          rotation={avgHeading}
           visibleRange={visibleRange}
           onBoundsRangeChange={() => {}}
           multiRoute={false}

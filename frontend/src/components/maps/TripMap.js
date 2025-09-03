@@ -1,14 +1,12 @@
-// FILE: frontend/src/TripMap.js
-//
-// --- VERSION 1.9.7-ALPHA ---
-// - FIXED: Guarded `.flat()` calls to prevent crash when primaryPath is undefined.
-// - UPDATED: Map height now fills parent container instead of fixed 400px.
-// - PRESERVED: All existing features, colors, and multiRoute logic.
+// --- VERSION 0.3.1.9.8 -ALPHA ---
+// - Ensured default export of TripMap component.
+// - Guards for columns/paths and stable bounds.
+// - Fills parent container; supports multiRoute overlay.
 //
 // https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png
 // https://tile.openstreetmap.bzh/ca/{z}/{x}/{y}.png
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { MapContainer, TileLayer, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -22,12 +20,8 @@ const STATE_COLORS = {
   "default": "#38BDF8"
 };
 
-const COMPARISON_COLOR = "#22D3EE"; // cyan-300, brighter on dark map
-
-const CHART_COLORS = [
-  '#38BDF8', '#F59E0B', '#4ADE80', '#F472B6', '#A78BFA',
-  '#2DD4BF', '#FB7185', '#FACC15', '#818CF8', '#FDE047'
-];
+const COMPARISON_COLOR = "#22D3EE";
+const CHART_COLORS = ['#38BDF8','#F59E0B','#4ADE80','#F472B6','#A78BFA','#2DD4BF','#FB7185','#FACC15','#818CF8','#FDE047'];
 
 function MapController({ bounds }) {
   const map = useMap();
@@ -39,86 +33,82 @@ function MapController({ bounds }) {
   return null;
 }
 
-function MapSync({ enabled }) {
-  	// Map still listens to events, but does nothing
-	useMapEvents({
-    	moveend: () => {},
-    	zoomend: () => {}
-	});
-  	return null;
+function MapSync() {
+  useMapEvents({ moveend: () => {}, zoomend: () => {} });
+  return null;
 }
 
-function TripMap({ primaryPath, comparisonPath, columns, visibleRange, multiRoute = false, labels = [], onBoundsRangeChange }) {
-	const latCol = columns.find(c => c.includes('latitude'));
-	const lonCol = columns.find(c => c.includes('longitude'));
+export default function TripMap({
+  primaryPath,
+  comparisonPath,
+  columns = ['latitude', 'longitude', 'operating_state'],
+  visibleRange,
+  multiRoute = false,
+  onBoundsRangeChange = () => {}
+}) {
+  const latCol = Array.isArray(columns) ? columns.find(c => c.includes('lat')) || 'latitude' : 'latitude';
+  const lonCol = Array.isArray(columns) ? columns.find(c => c.includes('lon')) || 'longitude' : 'longitude';
 
-  	const getPathSegments = (path) => {
-    	if (!path || !latCol || !lonCol) return [];
-    	const segments = [];
-    	let currentSegment = { color: STATE_COLORS.default, points: [] };
-    	path.forEach(row => {
-      		const stateColor = STATE_COLORS[row.operating_state] || STATE_COLORS.default;
-      		const point = [row[latCol], row[lonCol]];
-      		if (point[0] && point[1] && point[0] !== 0) {
-        		if (stateColor !== currentSegment.color && currentSegment.points.length > 0) {
-          			segments.push(currentSegment);
-          			currentSegment = { color: stateColor, points: [currentSegment.points[currentSegment.points.length - 1]] };
-        		}
-        		currentSegment.color = stateColor;
-        		currentSegment.points.push(point);
-      		}
-    	});
-    	if (currentSegment.points.length > 1) segments.push(currentSegment);
-    	return segments;
-  	};
+  const getPathSegments = (path) => {
+    if (!Array.isArray(path)) return [];
+    const segments = [];
+    let current = { color: STATE_COLORS.default, points: [] };
+    path.forEach(row => {
+      const stateColor = STATE_COLORS[row?.operating_state] || STATE_COLORS.default;
+      const lat = row?.[latCol]; const lon = row?.[lonCol];
+      const valid = typeof lat === 'number' && typeof lon === 'number' && lat !== 0 && lon !== 0;
+      if (!valid) return;
+      if (stateColor !== current.color && current.points.length > 0) {
+        segments.push(current);
+        current = { color: stateColor, points: [current.points[current.points.length - 1]] };
+      }
+      current.color = stateColor;
+      current.points.push([lat, lon]);
+    });
+    if (current.points.length > 1) segments.push(current);
+    return segments;
+  };
 
-  	const getBounds = () => {
-		if (multiRoute) {
-			const allPoints = Array.isArray(primaryPath) && typeof primaryPath.flat === 'function'
-			? primaryPath.flat().filter(p => p && p.latitude && p.longitude && p.latitude !== 0 && p.longitude !== 0)
-			: [];
-			if (allPoints.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
-			const latitudes = allPoints.map(p => p.latitude);
-			const longitudes = allPoints.map(p => p.longitude);
-			return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
-		}
+  const getBounds = () => {
+    if (multiRoute && Array.isArray(primaryPath)) {
+      const allPoints = primaryPath.flat().filter(p => p && typeof p[latCol] === 'number' && typeof p[lonCol] === 'number' && p[latCol] !== 0 && p[lonCol] !== 0);
+      if (!allPoints.length) return [[44.97, -93.26], [44.98, -93.27]];
+      const lats = allPoints.map(p => p[latCol]); const lons = allPoints.map(p => p[lonCol]);
+      return [[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]];
+    }
+    const arr = Array.isArray(primaryPath) ? primaryPath : [];
+    const min = Math.max(0, visibleRange?.min ?? 0);
+    const max = Math.min((arr.length - 1), visibleRange?.max ?? 0);
+    const slice = arr.slice(min, max + 1);
+    const points = slice.map(r => [r?.[latCol], r?.[lonCol]]).filter(([lat, lon]) => typeof lat === 'number' && typeof lon === 'number' && lat !== 0 && lon !== 0);
+    if (!points.length) return [[44.97, -93.26], [44.98, -93.27]];
+    const lats = points.map(p => p[0]); const lons = points.map(p => p[1]);
+    return [[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]];
+  };
 
-		if (!primaryPath) return [[44.97, -93.26], [44.98, -93.27]];
-		const path = primaryPath.slice(visibleRange?.min ?? 0, (visibleRange?.max ?? primaryPath.length - 1) + 1);
-		const points = path.map(row => [row[latCol], row[lonCol]]).filter(p => p[0] && p[1] && p[0] !== 0);
-		if (points.length === 0) return [[44.97, -93.26], [44.98, -93.27]];
-		const latitudes = points.map(p => p[0]);
-		const longitudes = points.map(p => p[1]);
-		return [[Math.min(...latitudes), Math.min(...longitudes)], [Math.max(...latitudes), Math.max(...longitudes)]];
-	};
+  const bounds = getBounds();
+  const primarySegments = (multiRoute || !Array.isArray(primaryPath)) ? [] : getPathSegments(primaryPath);
+  const comparisonSegments = Array.isArray(comparisonPath) ? getPathSegments(comparisonPath) : [];
 
-
-  	const bounds = getBounds();
-  	const primarySegments = multiRoute ? [] : getPathSegments(primaryPath);
-  	const comparisonSegments = comparisonPath ? getPathSegments(comparisonPath) : [];
-
-	return (
-		<MapContainer bounds={bounds} style={{ height: '100%', width: '100%', backgroundColor: '#1F2937', borderRadius: '0.5rem' }}>
-			<MapController bounds={bounds} />
-			<MapSync enabled={!multiRoute} />
-			<TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors &copy; CARTO" />
-
-			{multiRoute ? (
-				primaryPath.map((path, index) => (
-					<Polyline key={`multi-${index}`} positions={path.map(p => [p.latitude, p.longitude])} color={CHART_COLORS[index % CHART_COLORS.length]} />
-				))
-			) : (
-				<>
-				{comparisonPath && comparisonSegments.map((segment, index) => (
-					<Polyline key={`comp-${index}`} positions={segment.points} color={COMPARISON_COLOR} weight={5} opacity={0.6} dashArray="5, 10" />
-				))}
-				{primarySegments.map((segment, index) => (
-					<Polyline key={index} positions={segment.points} color={segment.color} weight={5} />
-				))}
-				</>
-			)}
-    	</MapContainer>
-  	);
+  return (
+    <MapContainer bounds={bounds} style={{ height: '100%', width: '100%', backgroundColor: '#1F2937', borderRadius: '0.5rem' }}>
+      <MapController bounds={bounds} />
+      <MapSync />
+      <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors &copy; CARTO" />
+      {multiRoute ? (
+        (Array.isArray(primaryPath) ? primaryPath : []).map((path, idx) => (
+          <Polyline key={`multi-${idx}`} positions={path.map(p => [p?.[latCol], p?.[lonCol]])} color={CHART_COLORS[idx % CHART_COLORS.length]} />
+        ))
+      ) : (
+        <>
+          {comparisonSegments.map((seg, idx) => (
+            <Polyline key={`comp-${idx}`} positions={seg.points} color={COMPARISON_COLOR} weight={5} opacity={0.6} dashArray="5, 10" />
+          ))}
+          {primarySegments.map((seg, idx) => (
+            <Polyline key={`prim-${idx}`} positions={seg.points} color={seg.color} weight={5} />
+          ))}
+        </>
+      )}
+    </MapContainer>
+  );
 }
-
-export default TripMap;
