@@ -64,28 +64,28 @@ def get_logs():
 	finally:
 		db_manager.close()
 
-@app.route('/api/logs/<int:log_id>/data', methods=['GET'])
-def get_log_data(log_id):
-	db_manager = DatabaseManager(DB_CONFIG)
-	try:
-		log_data, columns, statistics, _ = db_manager.get_data_for_log(log_id)
-		trip_info = db_manager.fetch_one("SELECT file_name, trip_group_id, distance_miles, trip_duration_seconds FROM log_index li LEFT JOIN trips t ON li.log_id = t.log_id WHERE li.log_id = %s", (log_id,))
-		group_logs = []
-		if trip_info and trip_info.get('trip_group_id'):
-			group_logs = db_manager.get_logs_for_trip_group(trip_info['trip_group_id'])
+	@app.route('/api/logs/<int:log_id>/data', methods=['GET'])
+	def get_log_data(log_id):
+		db_manager = DatabaseManager(DB_CONFIG)
+		try:
+			log_data, columns, statistics, _ = db_manager.get_data_for_log(log_id)
+			trip_info = db_manager.fetch_one("SELECT file_name, trip_group_id, distance_miles, trip_duration_seconds FROM log_index li LEFT JOIN trips t ON li.log_id = t.log_id WHERE li.log_id = %s", (log_id,))
+			group_logs = []
+			if trip_info and trip_info.get('trip_group_id'):
+				group_logs = db_manager.get_logs_for_trip_group(trip_info['trip_group_id'])
 
-		return jsonify({
-			"data": log_data, 
-			"columns": columns, 
-			"statistics": statistics,
-			"trip_info": trip_info,
-			"group_logs": group_logs
-		})
-	except Exception as e:
-		app.logger.error(f"Error fetching data for log_id {log_id}: {e}", exc_info=True)
-		return jsonify({"error": "Could not fetch log data"}), 500
-	finally:
-		db_manager.close()
+			return jsonify({
+				"data": log_data, 
+				"columns": columns, 
+				"statistics": statistics,
+				"trip_info": trip_info,
+				"group_logs": group_logs
+			})
+		except Exception as e:
+			app.logger.error(f"Error fetching data for log_id {log_id}: {e}", exc_info=True)
+			return jsonify({"error": "Could not fetch log data"}), 500
+		finally:
+			db_manager.close()
 
 @app.route('/api/trip-groups', methods=['GET'])
 def get_trip_groups():
