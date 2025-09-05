@@ -1,4 +1,4 @@
-/// --- VERSION 0.9.4 ---
+/// --- VERSION 0.9.5 ---
 // - Renders PID selectors, sampling indicator, and a Chart.js line chart.
 // - Uses adaptive sampling for performance.
 // - Fully wired to log.data / log.columns from backend.
@@ -143,12 +143,14 @@ export default function TripChart({
     setVisibleRange({ min, max: min + size });
   };
 
-  const scrollPercent = useMemo(() => {
+  const { scrollWidthPercent, scrollLeftPercent } = useMemo(() => {
     const total = dataRef.length;
     const size = visibleRange.max - visibleRange.min;
-    return total > 0 ? Math.max((size / total) * 100, 2) : 0; // min width 2%
+    const widthPct = total > 0 ? Math.max((size / total) * 100, 2) : 0; // min width 2%
+    const leftPct = total > 0 ? (visibleRange.min / total) * 100 : 0;
+    return { scrollWidthPercent: widthPct, scrollLeftPercent: leftPct };
   }, [dataRef.length, visibleRange]);
-
+  
   return (
     <div className="bg-gray-800 rounded-lg shadow-xl p-4 space-y-2">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -181,14 +183,19 @@ export default function TripChart({
           disabled={visibleRange.min <= 0}
           className={`px-2 py-1 rounded ${visibleRange.min <= 0 ? 'bg-gray-600 text-gray-500' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
         >
-          ◀
         </button>
-        <div className="flex-1 h-2 bg-gray-600 rounded relative">
+
+        <div className="flex-1 h-2 bg-gray-600 rounded relative overflow-hidden">
           <div
-            className="absolute top-0 left-0 h-2 bg-blue-400 rounded"
-            style={{ width: `${scrollPercent}%`, transition: 'width 0.2s ease' }}
+            className="absolute top-0 h-2 bg-blue-400 rounded"
+            style={{
+              width: `${scrollWidthPercent}%`,
+              left: `${scrollLeftPercent}%`,
+              transition: 'left 0.2s ease, width 0.2s ease'
+            }}
           />
         </div>
+
         <button
           onClick={() => handlePan('right')}
           disabled={visibleRange.max >= dataRef.length - 1}
