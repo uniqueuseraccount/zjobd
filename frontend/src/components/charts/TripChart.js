@@ -1,4 +1,4 @@
-/// --- VERSION 0.9.0 ---
+/// --- VERSION 0.9.1 ---
 // - Renders PID selectors, sampling indicator, and a Chart.js line chart.
 // - Uses adaptive sampling for performance.
 // - Fully wired to log.data / log.columns from backend.
@@ -12,6 +12,7 @@ import zoomPlugin from 'chartjs-plugin-zoom';
 import PIDSelector from '../shared/PIDSelector';
 import SamplingIndicator from '../shared/SamplingIndicator';
 import { sampleData } from '../../utils/samplingUtils';
+import { getDefaultVisibleRange } from '../../utils/rangeUtils';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, zoomPlugin);
 
@@ -20,7 +21,8 @@ export default function TripChart({
   selectedPIDs = [],
   onPIDChange = () => {},
   chartColors = [],
-  visibleRange = { min: 0, max: 0 }
+  visibleRange = { min: 0, max: 0 },
+  setVisibleRange = () => {}
 }) {
   const chartRef = useRef(null);
   const dataRef = log?.data || [];
@@ -32,6 +34,18 @@ export default function TripChart({
     if (dataRef.length === 0 || max < min) return [];
     return dataRef.slice(min, max + 1);
   }, [dataRef, visibleRange]);
+
+  const timeLabels = useMemo(() => {
+    const start = windowData[0]?.timestamp ?? 0;
+    return windowData.map(row => {
+      const t = Number(row?.timestamp ?? 0) - Number(start);
+      const sec = Math.floor(t / 1000);
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    });
+  }, [windowData]);
 
   const { chartData, samplingActive } = useMemo(() => {
     let samplingFlag = false;
@@ -58,12 +72,12 @@ export default function TripChart({
 
     return {
       chartData: {
-        labels: windowData.map((_, i) => i),
+        labels: timeLabels,
         datasets
       },
       samplingActive: samplingFlag
     };
-  }, [windowData, selectedPIDs, chartColors]);
+  }, [windowData, selectedPIDs, chartColors, timeLabels]);
 
   const chartOptions = useMemo(() => ({
     responsive: true,
@@ -79,9 +93,14 @@ export default function TripChart({
     }
   }), []);
 
+  const handleZoom = (minutes) => {
+    const range = getDefaultVisibleRange(dataRef, minutes * 60);
+    setVisibleRange(range);
+  };
+
   return (
-    <div className="bg-gray-800 rounded-lg shadow-xl p-4">
-      <div className="flex items-center space-x-4 mb-2">
+    <div className="bg-gray-800 rounded-lg shadow-xl p-4 space-y-2">
+      <div className="flex items-center space-x-4 flex-wrap">
         {(selectedPIDs || []).map((pid, index) => (
           <PIDSelector
             key={index}
@@ -93,6 +112,12 @@ export default function TripChart({
         ))}
       </div>
       <SamplingIndicator active={samplingActive} />
+      <div className="flex space-x-2 text-sm text-gray-300">
+        <button onClick={() => handleZoom(2)} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">2min</button>
+        <button onClick={() => handleZoom(5)} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">5min</button>
+        <button onClick={() => handleZoom(10)} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">10min</button>
+        <button onClick={() => handleZoom(60)} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">Reset</button>
+      </div>
       <div className="h-[56vh]">
         <Line ref={chartRef} options={chartOptions} data={chartData} />
       </div>

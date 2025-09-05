@@ -1,151 +1,91 @@
-// --- VERSION 0.9.0 ---
+// --- VERSION 0.9.1 ---
 // - Displays TripMap as background with overlaid chart synced to visibleRange.
 // - Click left/right halves to pan window.
 // - Anchors y-scale to most variable PID in current window.
 
-import React, { useMemo, useRef, useState } from 'react';
-import TripMap from '../maps/TripMap';
-import { Line } from 'react-chartjs-2';
-import {
-  Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend
-} from 'chart.js';
-import zoomPlugin from 'chartjs-plugin-zoom';
+import React, { useMemo } from 'react';
+import { MapContainer, TileLayer, Polyline } from 'react-leaflet';
 import { getAverageHeading } from '../../utils/mapUtils';
+import { sampleData } from '../../utils/samplingUtils';
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, zoomPlugin);
+const CHART_COLORS = ['#FF4D4D', '#00E676', '#38BDF8', '#F59E0B', '#A78BFA'];
+
+function offsetPoint([lat, lon], headingDeg, magnitude) {
+  const headingRad = (headingDeg * Math.PI) / 180;
+  const dx = Math.cos(headingRad + Math.PI / 2) * magnitude;
+  const dy = Math.sin(headingRad + Math.PI / 2) * magnitude;
+  const latOffset = dy / 111111; // meters to degrees
+  const lonOffset = dx / (111111 * Math.cos((lat * Math.PI) / 180));
+  return [lat + latOffset, lon + lonOffset];
+}
 
 export default function CombinedChartMap({
   log,
   selectedPIDs = [],
-  chartColors = [],
+  chartColors = CHART_COLORS,
   visibleRange = { min: 0, max: 0 },
-  setVisibleRange = () => {},
   mapColumns = ['latitude', 'longitude', 'operating_state']
 }) {
-  const chartRef = useRef(null);
-  const [animating, setAnimating] = useState(false);
   const dataRef = log?.data || [];
-
-  const windowSize = Math.max(1, (visibleRange?.max ?? 0) - (visibleRange?.min ?? 0));
+  const latCol = mapColumns[0];
+  const lonCol = mapColumns[1];
 
   const windowData = useMemo(() => {
     const min = Math.max(0, visibleRange?.min ?? 0);
-    const max = Math.min((dataRef.length - 1), visibleRange?.max ?? 0);
-    if (dataRef.length === 0 || max < min) return [];
+    const max = Math.min(dataRef.length - 1, visibleRange?.max ?? 0);
     return dataRef.slice(min, max + 1);
   }, [dataRef, visibleRange]);
 
-  const anchorPID = useMemo(() => {
-    let maxVar = -Infinity;
-    let pidName = null;
-    (selectedPIDs || []).forEach(pid => {
+  const baseTrack = useMemo(() => {
+    return windowData
+      .map((row) => {
+        const lat = row?.[latCol];
+        const lon = row?.[lonCol];
+        return typeof lat === 'number' && typeof lon === 'number' ? [lat, lon] : null;
+      })
+      .filter(Boolean);
+  }, [windowData, latCol, lonCol]);
+
+  const heading = useMemo(() => getAverageHeading(windowData, latCol, lonCol), [windowData, latCol, lonCol]);
+
+  const pidCurves = useMemo(() => {
+    const curves = [];
+
+    selectedPIDs.forEach((pid, idx) => {
       if (!pid || pid === 'none') return;
-      const vals = windowData.map(r => r?.[pid]).filter(v => typeof v === 'number');
-      if (!vals.length) return;
-      const range = Math.max(...vals) - Math.min(...vals);
-      if (range > maxVar) {
-        maxVar = range;
-        pidName = pid;
-      }
-    });
-    return pidName;
-  }, [windowData, selectedPIDs]);
 
-  const anchorMedian = useMemo(() => {
-    if (!anchorPID || windowData.length === 0) return 0;
-    const vals = windowData.map(r => r?.[anchorPID]).filter(v => typeof v === 'number').sort((a, b) => a - b);
-    if (vals.length === 0) return 0;
-    const mid = Math.floor(vals.length / 2);
-    return vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
-  }, [anchorPID, windowData]);
+      const values = windowData.map((row) => row?.[pid]);
+      const sampled = sampleData(values, baseTrack.length);
+      const maxVal = Math.max(...sampled.filter((v) => typeof v === 'number'));
+      const scale = 10 / (maxVal || 1); // scale to ~10 meters
 
-  const avgHeading = useMemo(() => {
-    return getAverageHeading(windowData, mapColumns[0], mapColumns[1]) || 0;
-  }, [windowData, mapColumns]);
-
-  const chartData = useMemo(() => {
-    const datasets = [];
-    (selectedPIDs || []).forEach((pid, idx) => {
-      if (!pid || pid === 'none') return;
-      datasets.push({
-        label: pid,
-        data: windowData.map(row => row?.[pid]),
-        borderColor: chartColors[idx] || '#38BDF8',
-        pointRadius: 0,
-        borderWidth: 2,
-        tension: 0.4
+      const curve = baseTrack.map((pt, i) => {
+        const offset = typeof sampled[i] === 'number' ? sampled[i] * scale : 0;
+        return offsetPoint(pt, heading, offset);
       });
+
+      curves.push({ color: chartColors[idx] || '#38BDF8', points: curve });
     });
-    return {
-      labels: windowData.map((_, i) => i),
-      datasets
-    };
-  }, [windowData, selectedPIDs, chartColors]);
 
-  const chartOptions = useMemo(() => {
-    const allVals = (selectedPIDs || [])
-      .filter(pid => pid && pid !== 'none')
-      .flatMap(pid => windowData.map(r => r?.[pid]).filter(v => typeof v === 'number'));
+    return curves;
+  }, [selectedPIDs, baseTrack, windowData, heading, chartColors]);
 
-    const minVal = allVals.length ? Math.min(...allVals) : 0;
-    const maxVal = allVals.length ? Math.max(...allVals) : 1;
-    const pad = (maxVal - minVal) * 0.1 || 1;
+  const bounds = useMemo(() => {
+    if (!baseTrack.length) return [[44.97, -93.26], [44.98, -93.27]];
+    const lats = baseTrack.map((p) => p[0]);
+    const lons = baseTrack.map((p) => p[1]);
+    return [[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]];
+  }, [baseTrack]);
 
-    const yMin = Math.min(minVal - pad, anchorMedian - pad);
-    const yMax = Math.max(maxVal + pad, anchorMedian + pad);
-
-    return {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: { duration: animating ? 500 : 0 },
-      plugins: {
-        legend: { display: true, labels: { color: '#FFFFFF' } },
-        zoom: { pan: { enabled: false }, zoom: { enabled: false } }
-      },
-      scales: {
-        y: { type: 'linear', min: yMin, max: yMax, ticks: { color: '#9CA3AF' } },
-        x: { ticks: { color: '#9CA3AF' } }
-    }
-  };
-}, [windowData, selectedPIDs, anchorMedian, animating]);
-
-const handlePanLeft = () => {
-  if (!dataRef.length) return;
-  setAnimating(true);
-  const shift = Math.max(1, Math.floor(windowSize / 2));
-  const min = Math.max(0, (visibleRange.min ?? 0) - shift);
-  const max = min + windowSize;
-  setVisibleRange({ min, max });
-  setTimeout(() => setAnimating(false), 500);
-};
-
-const handlePanRight = () => {
-  if (!dataRef.length) return;
-  setAnimating(true);
-  const shift = Math.max(1, Math.floor(windowSize / 2));
-  const maxIdx = dataRef.length - 1;
-  const max = Math.min(maxIdx, (visibleRange.max ?? 0) + shift);
-  const min = Math.max(0, max - windowSize);
-  setVisibleRange({ min, max });
-  setTimeout(() => setAnimating(false), 500);
-};
-
-return (
-  <div className="relative w-full aspect-square bg-gray-900 rounded-lg overflow-hidden">
-    <div className="absolute inset-0 transition-transform duration-500" style={{ transform: `rotate(${avgHeading}deg)` }}>
-      <TripMap
-        primaryPath={windowData}
-        columns={mapColumns}
-        visibleRange={visibleRange}
-        onBoundsRangeChange={() => {}}
-        multiRoute={false}
-      />
+  return (
+    <div className="w-full h-[60vh] rounded-lg overflow-hidden bg-gray-900">
+      <MapContainer bounds={bounds} style={{ height: '100%', width: '100%' }}>
+        <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png" />
+        <Polyline positions={baseTrack} color="#6B7280" weight={3} />
+        {pidCurves.map((curve, idx) => (
+          <Polyline key={idx} positions={curve.points} color={curve.color} weight={4} />
+        ))}
+      </MapContainer>
     </div>
-    <div className="absolute bottom-0 left-0 w-full h-1/3 bg-black/40 backdrop-blur-sm">
-      <Line ref={chartRef} options={chartOptions} data={chartData} />
-      <div className="absolute top-0 left-0 h-full w-1/2 cursor-pointer" onClick={handlePanLeft} />
-      <div className="absolute top-0 right-0 h-full w-1/2 cursor-pointer" onClick={handlePanRight} />
-    </div>
-  </div>
-);
+  );
 }
