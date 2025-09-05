@@ -1,4 +1,4 @@
-/// --- VERSION 0.9.1 ---
+/// --- VERSION 0.9.3 ---
 // - Renders PID selectors, sampling indicator, and a Chart.js line chart.
 // - Uses adaptive sampling for performance.
 // - Fully wired to log.data / log.columns from backend.
@@ -25,8 +25,9 @@ export default function TripChart({
   setVisibleRange = () => {}
 }) {
   const chartRef = useRef(null);
-  const dataRef = log?.data || [];
-  const colsRef = log?.columns || [];
+
+  const dataRef = useMemo(() => log?.data || [], [log]);
+  const colsRef = useMemo(() => log?.columns || [], [log]);
 
   const windowData = useMemo(() => {
     const min = Math.max(0, visibleRange?.min ?? 0);
@@ -36,16 +37,16 @@ export default function TripChart({
   }, [dataRef, visibleRange]);
 
   const timeLabels = useMemo(() => {
-    const start = windowData[0]?.timestamp ?? 0;
+    const startTs = windowData[0]?.timestamp ?? dataRef[0]?.timestamp ?? 0;
     return windowData.map(row => {
-      const t = Number(row?.timestamp ?? 0) - Number(start);
+      const t = Number(row?.timestamp ?? 0) - Number(startTs);
       const sec = Math.floor(t / 1000);
       const h = Math.floor(sec / 3600);
       const m = Math.floor((sec % 3600) / 60);
       const s = sec % 60;
       return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     });
-  }, [windowData]);
+  }, [windowData, dataRef]);
 
   const { chartData, samplingActive } = useMemo(() => {
     let samplingFlag = false;
@@ -79,28 +80,76 @@ export default function TripChart({
     };
   }, [windowData, selectedPIDs, chartColors, timeLabels]);
 
-  const chartOptions = useMemo(() => ({
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false,
-    plugins: {
-      legend: { display: true, labels: { color: '#FFFFFF' } },
-      zoom: { pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' } }
-    },
-    scales: {
-      x: { ticks: { color: '#9CA3AF' } },
-      y: { ticks: { color: '#9CA3AF' } }
-    }
-  }), []);
+  const chartOptions = useMemo(() => {
+    // Range-compression scaling
+    const allVals = (selectedPIDs || [])
+      .filter(pid => pid && pid !== 'none')
+      .flatMap(pid => windowData.map(r => r?.[pid]).filter(v => typeof v === 'number'));
 
-  const handleZoom = (minutes) => {
-    const range = getDefaultVisibleRange(dataRef, minutes * 60);
-    setVisibleRange(range);
+    let yMin = Math.min(...allVals);
+    let yMax = Math.max(...allVals);
+
+    if (selectedPIDs.length > 1) {
+      const ranges = selectedPIDs
+        .map(pid => windowData.map(r => r?.[pid]).filter(v => typeof v === 'number'))
+        .filter(arr => arr.length)
+        .map(arr => ({ min: Math.min(...arr), max: Math.max(...arr) }));
+
+      if (ranges.length > 1) {
+        const gap = ranges[1].min - ranges[0].max;
+        if (gap > (ranges[0].max - ranges[0].min) * 2) {
+          yMin = ranges[0].min;
+          yMax = ranges[1].max;
+        }
+      }
+    }
+
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        zoom: { pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' } }
+      },
+      scales: {
+        x: { ticks: { color: '#9CA3AF' } },
+        y: { min: yMin, max: yMax, ticks: { color: '#9CA3AF' } }
+      }
+    };
+  }, [windowData, selectedPIDs]);
+
+  // Inside TripChart.js — replace the handleZoom function with this:
+
+const handleZoom = (minutes) => {
+  if (minutes === 'reset') {
+    // Full log view
+    setVisibleRange({ min: 0, max: dataRef.length - 1 });
+    return;
+  }
+  const range = getDefaultVisibleRange(dataRef, minutes * 60);
+  setVisibleRange(range);
+};
+
+  const handlePan = (direction) => {
+    const totalLength = dataRef.length;
+    const size = visibleRange.max - visibleRange.min;
+    const shift = Math.floor(size / 2);
+    let min = visibleRange.min;
+    if (direction === 'left') min = Math.max(0, min - shift);
+    if (direction === 'right') min = Math.min(totalLength - size, min + shift);
+    setVisibleRange({ min, max: min + size });
   };
+
+  const scrollPercent = useMemo(() => {
+    const total = dataRef.length;
+    const size = visibleRange.max - visibleRange.min;
+    return total > 0 ? Math.max((size / total) * 100, 2) : 0; // min width 2%
+  }, [dataRef.length, visibleRange]);
 
   return (
     <div className="bg-gray-800 rounded-lg shadow-xl p-4 space-y-2">
-      <div className="flex items-center space-x-4 flex-wrap">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         {(selectedPIDs || []).map((pid, index) => (
           <PIDSelector
             key={index}
@@ -112,15 +161,39 @@ export default function TripChart({
         ))}
       </div>
       <SamplingIndicator active={samplingActive} />
-      <div className="flex space-x-2 text-sm text-gray-300">
-        <button onClick={() => handleZoom(2)} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">2min</button>
-        <button onClick={() => handleZoom(5)} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">5min</button>
-        <button onClick={() => handleZoom(10)} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">10min</button>
-        <button onClick={() => handleZoom(60)} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">Reset</button>
-      </div>
+
+<div className="flex space-x-2 text-sm text-gray-300">
+  <button onClick={() => handleZoom(2)} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">2min</button>
+  <button onClick={() => handleZoom(5)} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">5min</button>
+  <button onClick={() => handleZoom(10)} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">10min</button>
+  <button onClick={() => handleZoom('reset')} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">Reset</button>
+</div>
+
       <div className="h-[56vh]">
         <Line ref={chartRef} options={chartOptions} data={chartData} />
       </div>
-    </div>
-  );
-}
+      <div className="flex items-center space-x-2 mt-2">
+        <button
+          onClick={() => handlePan('left')}
+          disabled={visibleRange.min <= 0}
+          className={`px-2 py-1 rounded ${visibleRange.min <= 0 ? 'bg-gray-600 text-gray-500' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+        >
+          ◀
+        </button>
+        <div className="flex-1 h-2 bg-gray-600 rounded relative">
+          <div
+            className="absolute top-0 left-0 h-2 bg-blue-400 rounded"
+            style={{ width: `${scrollPercent}%`, transition: 'width 0.2s ease' }}
+          />
+        </div>
+        <button
+          onClick={() => handlePan('right')}
+          disabled={visibleRange.max >= dataRef.length - 1}
+          className={`px-2 py-1 rounded ${visibleRange.max >= dataRef.length - 1 ? 'bg-gray-600 text-gray-500': 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+          >
+          </button>
+        </div>
+      </div>
+    );
+  }
+            

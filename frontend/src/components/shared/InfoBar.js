@@ -1,27 +1,42 @@
-// --- VERSION 0.2.1 ---
+// --- VERSION 0.2.3 ---
 // - Displays trip metadata and group log count.
+
 
 import React from 'react';
 import { Link } from 'react-router-dom';
 
 function formatDuration(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
+  if (seconds == null) return '—';
+  const rounded = Math.round(seconds);
+  const h = Math.floor(rounded / 3600);
+  const m = Math.floor((rounded % 3600) / 60);
+  const s = rounded % 60;
   return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
 function formatTimestamp(ts) {
-  const d = new Date(ts);
-  return d.toLocaleString();
+  if (!ts) return 'Unknown';
+  // Handle string, integer seconds, or float seconds
+  if (typeof ts === 'string' && !isNaN(Date.parse(ts))) {
+    return new Date(ts).toLocaleString();
+  }
+  if (typeof ts === 'number') {
+    // If it's in seconds, multiply to ms
+    return new Date(ts < 1e12 ? ts * 1000 : ts).toLocaleString();
+  }
+  return 'Unknown';
 }
 
 export default function InfoBar({ tripInfo, groupLogs }) {
   const filename = tripInfo?.file_name || 'Unknown';
-  const startTime = tripInfo?.start_time ? formatTimestamp(tripInfo.start_time) : 'Unknown';
-  const distance = tripInfo?.distance_miles != null ? `${tripInfo.distance_miles} mi` : '—';
-  const duration = tripInfo?.trip_duration_seconds != null ? formatDuration(tripInfo.trip_duration_seconds) : '—';
+  const startTime = formatTimestamp(tripInfo?.start_time);
+  const distance = tripInfo?.distance_miles != null
+    ? `${Number(tripInfo.distance_miles).toFixed(2)} mi`
+    : '—';
+  const duration = formatDuration(tripInfo?.trip_duration_seconds);
   const rowCount = tripInfo?.row_count != null ? `${tripInfo.row_count} rows` : '—';
+
+  const groupCount = Array.isArray(groupLogs) ? groupLogs.length : 0;
   const groupId = tripInfo?.trip_group_id;
 
   return (
@@ -33,10 +48,12 @@ export default function InfoBar({ tripInfo, groupLogs }) {
         <span>{duration}</span>
         <span>{rowCount}</span>
       </div>
-      {groupId && (
+      {groupCount >= 2 && groupId ? (
         <Link to={`/trip-groups/${groupId}`} className="text-blue-400 hover:underline">
-          View Group →
+          Part of group ({groupCount} logs) →
         </Link>
+      ) : (
+        <span className="text-gray-400">No trip group</span>
       )}
     </div>
   );
