@@ -1,4 +1,4 @@
-/// --- VERSION 0.9.3 ---
+/// --- VERSION 0.9.4 ---
 // - Renders PID selectors, sampling indicator, and a Chart.js line chart.
 // - Uses adaptive sampling for performance.
 // - Fully wired to log.data / log.columns from backend.
@@ -121,15 +121,17 @@ export default function TripChart({
 
   // Inside TripChart.js — replace the handleZoom function with this:
 
-const handleZoom = (minutes) => {
-  if (minutes === 'reset') {
-    // Full log view
-    setVisibleRange({ min: 0, max: dataRef.length - 1 });
-    return;
-  }
-  const range = getDefaultVisibleRange(dataRef, minutes * 60);
-  setVisibleRange(range);
-};
+  const handleZoom = (minutes) => {
+    if (minutes === 'reset') {
+      // Only reset if not already at full view
+      if (visibleRange.min === 0 && visibleRange.max === dataRef.length - 1) return;
+      setVisibleRange({ min: 0, max: dataRef.length - 1 });
+      return;
+    }
+    const range = getDefaultVisibleRange(dataRef, minutes * 60);
+    setVisibleRange(range);
+  };
+  
 
   const handlePan = (direction) => {
     const totalLength = dataRef.length;
@@ -166,7 +168,8 @@ const handleZoom = (minutes) => {
   <button onClick={() => handleZoom(2)} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">2min</button>
   <button onClick={() => handleZoom(5)} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">5min</button>
   <button onClick={() => handleZoom(10)} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">10min</button>
-  <button onClick={() => handleZoom('reset')} className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">Reset</button>
+  <button onClick={() => handleZoom('reset')} disabled={visibleRange.min === 0 && visibleRange.max === dataRef.length - 1} className={`px-2 py-1 rounded ${visibleRange.min === 0 && visibleRange.max === dataRef.length - 1 ? 'bg-gray-600 text-gray-500' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>Reset</button>
+
 </div>
 
       <div className="h-[56vh]">
