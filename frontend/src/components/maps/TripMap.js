@@ -1,7 +1,6 @@
-// --- VERSION 0.9.2 ---
+// --- VERSION 0.9.3 ---
 // - Renders Leaflet map with colored segments by operating state.
 // - Supports multiRoute mode and visibleRange slicing.
-
 
 import React, { useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
@@ -30,13 +29,11 @@ function MapController({ bounds }) {
 export default function TripMap({
   primaryPath,
   columns = ['latitude', 'longitude', 'operating_state'],
-  visibleRange,
-  multiRoute = false
+  visibleRange
 }) {
   const latCol = columns[0];
   const lonCol = columns[1];
 
-  // Slice the path to match the visible range
   const slicedPath = useMemo(() => {
     if (!Array.isArray(primaryPath)) return [];
     const min = Math.max(0, visibleRange?.min ?? 0);
@@ -75,12 +72,17 @@ export default function TripMap({
   }, [slicedPath, latCol, lonCol]);
 
   return (
-    <MapContainer bounds={bounds} style={{ height: '60vh', width: '100%', backgroundColor: '#1F2937', borderRadius: '0.5rem' }}>
-      <MapController bounds={bounds} />
-      <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png" />
-      {segments.map((seg, idx) => (
-        <Polyline key={idx} positions={seg.points} color={seg.color} weight={5} />
-      ))}
-    </MapContainer>
+    <div style={{ height: '60vh', width: '100%' }}>
+      <MapContainer
+        bounds={bounds}
+        style={{ height: '100%', width: '100%', backgroundColor: '#1F2937', borderRadius: '0.5rem' }}
+      >
+        <MapController bounds={bounds} />
+        <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+        {segments.map((seg, idx) => (
+          <Polyline key={idx} positions={seg.points} color={seg.color} weight={5} />
+        ))}
+      </MapContainer>
+    </div>
   );
 }

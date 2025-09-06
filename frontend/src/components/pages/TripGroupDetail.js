@@ -1,15 +1,10 @@
-// --- VERSION 0.9.1 ---
-// - Restored full functionality from pre‑refactor version.
-// - Fetches trip group data, normalizes to pseudo‑log for charts.
-// - Passes PID state to TripChart and CombinedChartMap.
-// - Displays InfoBar with group info.
+// --- VERSION 0.9.2 ---
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import TripChart from '../charts/TripChart';
 import TripMap from '../maps/TripMap';
 import InfoBar from '../shared/InfoBar';
-import { DEFAULT_WINDOW_SECONDS, getDefaultVisibleRange } from '../../utils/rangeUtils';
 
 export default function TripGroupDetail() {
   const { groupId } = useParams();
@@ -45,7 +40,9 @@ export default function TripGroupDetail() {
         const columns = primaryData.length ? Object.keys(primaryData[0]) : [];
         const pseudoLog = { data: primaryData, columns };
         setGroupPayload({ pseudoLog, tripInfo: null, groupLogs: logs });
-        setVisibleRange(getDefaultVisibleRange(primaryData, DEFAULT_WINDOW_SECONDS));
+        if (primaryData.length) {
+          setVisibleRange({ min: 0, max: primaryData.length - 1 }); // full log view
+        }
       })
       .catch(err => {
         console.error(`[TripGroupDetail] Error fetching group ${groupId}:`, err);
@@ -74,8 +71,6 @@ export default function TripGroupDetail() {
         primaryPath={log.data}
         columns={['latitude', 'longitude', 'operating_state']}
         visibleRange={visibleRange}
-        onBoundsRangeChange={() => {}}
-        multiRoute={false}
       />
     </div>
   );

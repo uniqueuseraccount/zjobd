@@ -1,15 +1,10 @@
-// --- VERSION 0.9.1 ---
-// - Restored full functionality from pre‑refactor version.
-// - Fetches log data, trip info, and group logs from backend.
-// - Passes PID state to TripChart and CombinedChartMap.
-// - Displays InfoBar with trip/group info.
+// --- VERSION 0.9.2 ---
 
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import TripChart from '../charts/TripChart';
 import TripMap from '../maps/TripMap';
 import InfoBar from '../shared/InfoBar';
-import { DEFAULT_WINDOW_SECONDS, getDefaultVisibleRange } from '../../utils/rangeUtils';
 
 export default function LogDetail() {
   const { logId } = useParams();
@@ -43,7 +38,9 @@ export default function LogDetail() {
         setLog({ data: data.data, columns: data.columns });
         setTripInfo(data.trip_info || null);
         setGroupLogs(data.group_logs || []);
-        setVisibleRange(getDefaultVisibleRange(data.data, DEFAULT_WINDOW_SECONDS));
+        if (data.data?.length) {
+          setVisibleRange({ min: 0, max: data.data.length - 1 }); // full log view
+        }
       })
       .catch(err => {
         console.error(`[LogDetail] Error fetching log ${logId}:`, err);
@@ -70,8 +67,6 @@ export default function LogDetail() {
         primaryPath={log.data}
         columns={['latitude', 'longitude', 'operating_state']}
         visibleRange={visibleRange}
-        onBoundsRangeChange={() => {}}
-        multiRoute={false}
       />
     </div>
   );

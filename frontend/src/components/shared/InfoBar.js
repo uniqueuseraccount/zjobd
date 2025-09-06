@@ -1,8 +1,7 @@
-// --- VERSION 0.2.3 ---
+// --- VERSION 0.2.5 ---
 // - Displays trip metadata and group log count.
 
-
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
 function formatDuration(seconds) {
@@ -16,20 +15,27 @@ function formatDuration(seconds) {
 
 function formatTimestamp(ts) {
   if (!ts) return 'Unknown';
-  // Handle string, integer seconds, or float seconds
   if (typeof ts === 'string' && !isNaN(Date.parse(ts))) {
     return new Date(ts).toLocaleString();
   }
   if (typeof ts === 'number') {
-    // If it's in seconds, multiply to ms
     return new Date(ts < 1e12 ? ts * 1000 : ts).toLocaleString();
   }
   return 'Unknown';
 }
 
 export default function InfoBar({ tripInfo, groupLogs }) {
+  // Debug log to inspect incoming values
+  useEffect(() => {
+    console.log('[InfoBar] tripInfo received:', tripInfo);
+    if (tripInfo) {
+      console.log('[InfoBar] start_time:', tripInfo.start_time);
+      console.log('[InfoBar] timestamp:', tripInfo.timestamp);
+    }
+  }, [tripInfo]);
+
   const filename = tripInfo?.file_name || 'Unknown';
-  const startTime = formatTimestamp(tripInfo?.start_time);
+  const startTime = formatTimestamp(tripInfo?.start_time || tripInfo?.timestamp);
   const distance = tripInfo?.distance_miles != null
     ? `${Number(tripInfo.distance_miles).toFixed(2)} mi`
     : '—';
