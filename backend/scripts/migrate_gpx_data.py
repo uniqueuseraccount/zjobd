@@ -1,25 +1,38 @@
 # File: backend/scripts/migrate_gpx_data.py
-# Version: 0.1.0.0
+# Version: 0.1.0.1
 # Commit: seed waypoints, tracks, one segment per track
+# Fixing LLM mistakes
 
 import os
+import sys
+
+# --------------------------------------------------------------------
+# Ensure project root is on PYTHONPATH so that `backend.config` imports
+# resolve correctly when run from repo root.
+# --------------------------------------------------------------------
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, '..', '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 import logging
 import mysql.connector
-from config.db_credentials import DB_CONFIG
-
-# Setup logging
-log_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'program_logs'))
-os.makedirs(log_dir, exist_ok=True)
-logging.basicConfig(
-    filename=os.path.join(log_dir, 'migrate_gpx_data.log'),
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+from backend.config.db_credentials import DB_CONFIG
 
 def main():
+    # Setup program_logs directory
+    log_dir = os.path.join(PROJECT_ROOT, 'program_logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, 'migrate_gpx_data.log')
+    logging.basicConfig(
+        filename=log_file,
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+    logger.info("=== Starting GPX data migration ===")
+
     # pdb.set_trace()
-    logger.info("Starting GPX data migration.")
     conn = mysql.connector.connect(**DB_CONFIG)
     cur = conn.cursor(dictionary=True)
 
