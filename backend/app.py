@@ -60,7 +60,16 @@ def start_watcher():
 def get_logs():
 	db_manager = DatabaseManager(DB_CONFIG)
 	try:
-		return jsonify(db_manager.get_all_logs())
+		# ENHANCED: Include GPS coordinates from trips table for quick filtering
+		query = """
+		SELECT li.log_id, li.file_name, li.start_timestamp, li.trip_duration_seconds,
+		       t.distance_miles, t.start_lat, t.start_lon, t.end_lat, t.end_lon,
+		       t.trip_group_id
+		FROM log_index li 
+		LEFT JOIN trips t ON li.log_id = t.log_id 
+		ORDER BY li.start_timestamp DESC
+		"""
+		return jsonify(db_manager.fetch_all(query))
 	finally:
 		db_manager.close()
 

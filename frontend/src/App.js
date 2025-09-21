@@ -1,8 +1,8 @@
 // FILE: frontend/src/App.js
 //
-// --- VERSION 1.8.0 ---
-// - Added new route for the "Tools" page.
-// - Added a navigation link to the new "Tools" page in the header.
+// --- VERSION 1.9.0 ---
+// - Added new route for GPS Heatmap Trip Analysis
+// - Added navigation link to GPS Heatmap in header
 // -----------------------------
 
 import React from 'react';
@@ -11,7 +11,8 @@ import LogList from './components/pages/LogList';
 import LogDetail from './components/pages/LogDetail';
 import TripGroupList from './components/pages/TripGroupList';
 import TripGroupDetail from './components/pages/TripGroupDetail';
-import Tools from './components/pages/Tools'; // New
+import Tools from './components/pages/Tools';
+import GPSHeatmap from './components/pages/GPSHeatmap'; // New
 
 function App() {
   return (
@@ -26,6 +27,9 @@ function App() {
               <Link to="/trip-groups" className="text-lg text-gray-300 hover:text-cyan-400">
                 Trip Groups
               </Link>
+              <Link to="/gps-heatmap" className="text-lg text-gray-300 hover:text-cyan-400">
+                GPS Analysis
+              </Link>
               <Link to="/tools" className="text-lg text-gray-300 hover:text-cyan-400">
                 Tools
               </Link>
@@ -37,11 +41,12 @@ function App() {
               <Route path="/logs/:logId" element={<LogDetail />} />
               <Route path="/trip-groups" element={<TripGroupList />} />
               <Route path="/trip-groups/:groupId" element={<TripGroupDetail />} />
+              <Route path="/gps-heatmap" element={<GPSHeatmap />} />
               <Route path="/tools" element={<Tools />} />
             </Routes>
           </main>
           <footer className="text-center mt-8 text-gray-500 text-sm">
-            <p>Jeep Log Processor v1.8.0</p>
+            <p>Jeep Log Processor v1.9.0</p>
           </footer>
         </div>
       </div>
