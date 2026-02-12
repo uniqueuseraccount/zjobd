@@ -5,3 +5,5 @@ Flask-Cors
 mysql-connector-python
 pytz
 watchdog
+lxml
+gpxpy

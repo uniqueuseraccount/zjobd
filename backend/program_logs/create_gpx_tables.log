@@ -1,0 +1,4 @@
+2025-09-18 00:07:23,656 - INFO - Starting GPX tables creation script.
+2025-09-18 00:07:23,801 - INFO - Dropping table if exists: track_segments
+2025-09-18 00:07:23,821 - INFO - Dropping table if exists: tracks
+2025-09-18 00:07:23,827 - INFO - Dropping table if exists: waypoints
