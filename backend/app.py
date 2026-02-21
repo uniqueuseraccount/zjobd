@@ -4,6 +4,7 @@ import os
 import time
 import logging
 import sys
+import queue
 from threading import Thread
 
 from flask import Flask, request, jsonify
@@ -17,6 +18,7 @@ try:
 	from log2db.db_manager import DatabaseManager
 	from log2db.core import process_log_file
 	from archive.group_trips import group_trips_logic
+	from api.tools import tools_bp
 except ImportError as e:
 	print(f"FATAL: A required file or module could not be imported: {e}", file=sys.stderr)
 	sys.exit(1)
@@ -25,31 +27,87 @@ app = Flask(__name__)
 CORS(app)
 logger = logging.getLogger(__name__)
 
-class LogFileHandler(FileSystemEventHandler):
-	def __init__(self, db_manager_class, db_config):
-		self.db_manager_class = db_manager_class
-		self.db_config = db_config
+# Register Blueprints
+app.register_blueprint(tools_bp)
 
+# Global queue for files waiting to be processed
+processing_queue = queue.Queue()
+
+class LogFileHandler(FileSystemEventHandler):
 	def on_created(self, event):
 		if not event.is_directory and event.src_path.lower().endswith('.csv'):
-			app.logger.info(f"WATCHDOG: New file detected: {event.src_path}")
-			time.sleep(2)
-			db_manager = self.db_manager_class(self.db_config)
+			app.logger.info(f"WATCHDOG: New file detected and queued: {event.src_path}")
+			processing_queue.put(event.src_path)
+
+def processing_worker(db_manager_class, db_config):
+	"""
+	Background worker that pulls files from the queue and processes them in batches.
+	"""
+	app.logger.info("WORKER: Ingestion worker thread started.")
+	while True:
+		try:
+			# Wait for at least one item
+			file_path = processing_queue.get()
+			batch = [file_path]
+			
+			# Try to grab up to 4 more items immediately (to make a batch of 5)
+			for _ in range(4):
+				try:
+					batch.append(processing_queue.get_nowait())
+				except queue.Empty:
+					break
+			
+			app.logger.info(f"WORKER: Starting batch processing of {len(batch)} files...")
+			
+			db_manager = db_manager_class(db_config)
 			try:
-				process_log_file(event.src_path, db_manager)
+				for path in batch:
+					try:
+						app.logger.info(f"WORKER: Processing {os.path.basename(path)}")
+						process_log_file(path, db_manager)
+					except Exception as e:
+						app.logger.error(f"WORKER: Error processing {path}: {e}")
+					finally:
+						processing_queue.task_done()
 			finally:
 				db_manager.close()
+				
+			app.logger.info(f"WORKER: Batch processing complete.")
+			
+		except Exception as e:
+			app.logger.error(f"WORKER: Critical failure in worker thread: {e}")
+			time.sleep(5) 
 
 def start_watcher():
 	path_to_watch = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'logs'))
 	if not os.path.isdir(path_to_watch):
 		os.makedirs(path_to_watch)
+	
+	# Start worker thread
+	worker = Thread(target=processing_worker, args=(DatabaseManager, DB_CONFIG), daemon=True)
+	worker.start()
+	
+	# Initial scan for unprocessed files
+	app.logger.info(f"WATCHDOG: Performing initial scan of {path_to_watch}...")
+	db_manager = DatabaseManager(DB_CONFIG)
+	try:
+		import glob
+		all_csvs = glob.glob(os.path.join(path_to_watch, "*.csv"))
+		queued_count = 0
+		for f in all_csvs:
+			if not db_manager.is_file_processed(os.path.basename(f)):
+				processing_queue.put(f)
+				queued_count += 1
+		app.logger.info(f"WATCHDOG: Initial scan complete. Queued {queued_count} pending files.")
+	finally:
+		db_manager.close()
+	
 	app.logger.info(f"WATCHDOG: Starting file watcher on directory: {path_to_watch}")
-	event_handler = LogFileHandler(DatabaseManager, DB_CONFIG)
+	event_handler = LogFileHandler()
 	observer = Observer()
 	observer.schedule(event_handler, path_to_watch, recursive=False)
 	observer.start()
-	app.logger.info("WATCHDOG: File watcher started successfully.")
+	app.logger.info("WATCHDOG: File watcher and worker thread started successfully.")
 	try:
 		while True: time.sleep(1)
 	except KeyboardInterrupt:
@@ -177,4 +235,5 @@ if __name__ == '__main__':
 	watcher_thread.start()
 	
 	app.logger.info("Starting Flask web server...")
-	app.run(host='0.0.0.0', port=5001, debug=True)
+	# WATCHDOG: Starting file watcher on directory: /Users/markpotter/zjobd/logs
+	app.run(host='0.0.0.0', port=5001, debug=True, use_reloader=False)

@@ -9,7 +9,8 @@
 import logging
 import sys
 
-sys.path.append('..')
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from config.db_credentials import DB_CONFIG
 from log2db.db_manager import DatabaseManager

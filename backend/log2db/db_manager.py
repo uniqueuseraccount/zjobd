@@ -70,7 +70,7 @@ class DatabaseManager:
         CREATE TABLE IF NOT EXISTS log_index (
             log_id INT AUTO_INCREMENT PRIMARY KEY,
             file_name VARCHAR(255) UNIQUE NOT NULL,
-            start_timestamp BIGINT NOT NULL,
+            start_time DATETIME(6) NOT NULL,
             trip_duration_seconds FLOAT NOT NULL,
             column_ids_json TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -88,17 +88,17 @@ class DatabaseManager:
         CREATE TABLE IF NOT EXISTS log_data (
             data_id BIGINT AUTO_INCREMENT PRIMARY KEY,
             log_id INT NOT NULL,
-            timestamp BIGINT NOT NULL,
+            row_time DATETIME(6) NOT NULL,
+            operating_state VARCHAR(50),
             INDEX (log_id),
+            INDEX idx_row_time (row_time),
+            INDEX idx_operating_state (operating_state),
             FOREIGN KEY (log_id) REFERENCES log_index(log_id) ON DELETE CASCADE
         ) ENGINE=InnoDB;
         """
         self.execute_query(log_index_query)
         self.execute_query(column_definitions_query)
         self.execute_query(log_data_query)
-
-        if not self._column_exists('log_data', 'operating_state'):
-            self.execute_query("ALTER TABLE log_data ADD COLUMN operating_state VARCHAR(50), ADD INDEX idx_operating_state (operating_state);")
 
         trips_table_query = """
         CREATE TABLE IF NOT EXISTS trips (
@@ -116,9 +116,6 @@ class DatabaseManager:
         ) ENGINE=InnoDB;
         """
         self.execute_query(trips_table_query)
-
-        if not self._column_exists('trips', 'distance_miles'):
-            self.execute_query("ALTER TABLE trips ADD COLUMN distance_miles FLOAT;")
         
         logging.info("Base tables verification complete.")
 
@@ -146,24 +143,35 @@ class DatabaseManager:
 
     def add_new_column(self, column_name, data_type):
         sanitized = sanitize_column_name(column_name)
-        logging.info(f"New column '{column_name}' detected. Adding to schema as '{sanitized}' with type {data_type}.")
-        insert_query = "INSERT INTO column_definitions (column_name, sanitized_name, mysql_data_type) VALUES (%s, %s, %s)"
-        if not self.execute_query(insert_query, (column_name, sanitized, data_type)):
-            return None
-        alter_query = f"ALTER TABLE log_data ADD COLUMN `{sanitized}` {data_type}"
-        if not self.execute_query(alter_query):
-            logging.error(f"Failed to add column '{sanitized}' to log_data table.")
-            return None
+        logging.info(f"New column '{column_name}' detected. Checking schema for '{sanitized}'.")
+        
+        # 1. Ensure it's in column_definitions
+        check_def = self.fetch_one("SELECT column_id FROM column_definitions WHERE column_name = %s", (column_name,))
+        if not check_def:
+            insert_query = "INSERT INTO column_definitions (column_name, sanitized_name, mysql_data_type) VALUES (%s, %s, %s)"
+            if not self.execute_query(insert_query, (column_name, sanitized, data_type)):
+                return None
+        
+        # 2. Ensure it's in log_data table
+        if not self._column_exists('log_data', sanitized):
+            logging.info(f"Adding column '{sanitized}' to log_data table with type {data_type}.")
+            alter_query = f"ALTER TABLE log_data ADD COLUMN `{sanitized}` {data_type}"
+            if not self.execute_query(alter_query):
+                logging.error(f"Failed to add column '{sanitized}' to log_data table.")
+                return None
+        else:
+            logging.info(f"Column '{sanitized}' already exists in log_data table.")
+
         return self.fetch_one("SELECT * FROM column_definitions WHERE column_name = %s", (column_name,))
 
     def is_file_processed(self, file_name):
         return self.fetch_one("SELECT 1 FROM log_index WHERE file_name = %s", (file_name,)) is not None
 
-    def insert_log_index(self, file_name, start_timestamp, duration, column_ids_json):
-        query = "INSERT INTO log_index (file_name, start_timestamp, trip_duration_seconds, column_ids_json) VALUES (%s, %s, %s, %s)"
+    def insert_log_index(self, file_name, start_time, duration, column_ids_json):
+        query = "INSERT INTO log_index (file_name, start_time, trip_duration_seconds, column_ids_json) VALUES (%s, %s, %s, %s)"
         cursor = self.connection.cursor()
         try:
-            cursor.execute(query, (file_name, start_timestamp, duration, column_ids_json))
+            cursor.execute(query, (file_name, start_time, duration, column_ids_json))
             self.connection.commit()
             log_id = cursor.lastrowid
             logging.info(f"Indexed file '{file_name}' with log_id: {log_id}.")
@@ -180,10 +188,10 @@ class DatabaseManager:
         sanitized_headers = list(column_map.values())
         cols_str = ", ".join([f"`{h}`" for h in sanitized_headers])
         placeholders = ", ".join(["%s"] * len(sanitized_headers))
-        query = f"INSERT INTO log_data (log_id, timestamp, operating_state, {cols_str}) VALUES (%s, %s, %s, {placeholders})"
+        query = f"INSERT INTO log_data (log_id, row_time, operating_state, {cols_str}) VALUES (%s, %s, %s, {placeholders})"
         insert_tuples = []
         for row in data_rows:
-            data_tuple = [log_id, row['row_timestamp'], row['operating_state']]
+            data_tuple = [log_id, row['row_time'], row['operating_state']]
             for header in column_map.keys():
                 data_tuple.append(row.get(header, None))
             insert_tuples.append(tuple(data_tuple))
@@ -199,15 +207,15 @@ class DatabaseManager:
             cursor.close()
 
     def get_first_valid_coord(self, log_id, lat_pid, lon_pid):
-        query = f"SELECT `{lat_pid}`, `{lon_pid}` FROM log_data WHERE log_id = %s AND `{lat_pid}` != 0 AND `{lon_pid}` != 0 ORDER BY timestamp ASC LIMIT 1"
+        query = f"SELECT `{lat_pid}`, `{lon_pid}` FROM log_data WHERE log_id = %s AND `{lat_pid}` != 0 AND `{lon_pid}` != 0 ORDER BY row_time ASC LIMIT 1"
         return self.fetch_one(query, (log_id,))
 
     def get_last_valid_coord(self, log_id, lat_pid, lon_pid):
-        query = f"SELECT `{lat_pid}`, `{lon_pid}` FROM log_data WHERE log_id = %s AND `{lat_pid}` != 0 AND `{lon_pid}` != 0 ORDER BY timestamp DESC LIMIT 1"
+        query = f"SELECT `{lat_pid}`, `{lon_pid}` FROM log_data WHERE log_id = %s AND `{lat_pid}` != 0 AND `{lon_pid}` != 0 ORDER BY row_time DESC LIMIT 1"
         return self.fetch_one(query, (log_id,))
 
     def get_all_logs(self):
-        query = "SELECT li.log_id, li.file_name, li.start_timestamp, li.trip_duration_seconds, t.distance_miles FROM log_index li LEFT JOIN trips t ON li.log_id = t.log_id ORDER BY li.start_timestamp DESC"
+        query = "SELECT li.log_id, li.file_name, li.start_time, UNIX_TIMESTAMP(li.start_time) as start_timestamp, li.trip_duration_seconds, t.distance_miles FROM log_index li LEFT JOIN trips t ON li.log_id = t.log_id ORDER BY li.start_time DESC"
         return self.fetch_all(query)
     
     def get_data_for_log(self, log_id, pids_to_fetch=None):
@@ -233,16 +241,17 @@ class DatabaseManager:
         
         statistics = self.get_pid_statistics(sanitized_names)
         cols_for_select = ", ".join([f"`{name}`" for name in sanitized_names])
-        data_query = f"SELECT data_id, timestamp, operating_state, {cols_for_select} FROM log_data WHERE log_id = %s ORDER BY timestamp ASC"
+        # Include timestamp in milliseconds for frontend compatibility
+        data_query = f"SELECT data_id, row_time, (UNIX_TIMESTAMP(row_time) * 1000 + MICROSECOND(row_time) / 1000) as timestamp, operating_state, {cols_for_select} FROM log_data WHERE log_id = %s ORDER BY row_time ASC"
         data_rows = self.fetch_all(data_query, (log_id,))
-        return data_rows, ['data_id', 'timestamp', 'operating_state'] + sanitized_names, statistics, normalized_names
+        return data_rows, ['data_id', 'row_time', 'timestamp', 'operating_state'] + sanitized_names, statistics, normalized_names
 
     def get_all_trip_groups(self):
         query = "SELECT trip_group_id, COUNT(trip_id) as trip_count, AVG(start_lat) as avg_start_lat, AVG(start_lon) as avg_start_lon, AVG(end_lat) as avg_end_lat, AVG(end_lon) as avg_end_lon FROM trips WHERE trip_group_id IS NOT NULL GROUP BY trip_group_id HAVING trip_count > 1 ORDER BY trip_count DESC;"
         return self.fetch_all(query)
 
     def get_logs_for_trip_group(self, group_id):
-        query = "SELECT li.log_id, li.file_name, li.start_timestamp, li.trip_duration_seconds FROM log_index li JOIN trips t ON li.log_id = t.log_id WHERE t.trip_group_id = %s ORDER BY li.start_timestamp ASC;"
+        query = "SELECT li.log_id, li.file_name, li.start_time, UNIX_TIMESTAMP(li.start_time) as start_timestamp, li.trip_duration_seconds FROM log_index li JOIN trips t ON li.log_id = t.log_id WHERE t.trip_group_id = %s ORDER BY li.start_time ASC;"
         return self.fetch_all(query, (group_id,))
 
     def get_trip_group_summary(self):

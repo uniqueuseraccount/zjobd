@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: osrm-backend
+  namespace: osrm
+  labels:
+    app: osrm-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: osrm-backend
+  template:
+    metadata:
+      labels:
+        app: osrm-backend
+    spec:
+      containers:
+        - name: osrm
+          # Official image supports linux/amd64 and linux/arm64
+          image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+          command: ["/bin/sh", "-c"]
+          # This startup script checks if map data exists. 
+          # If not, it downloads a default region (Iowa - usually covers typical use cases, can be changed)
+          # Then it processes the map data (extract, partition, customize) and starts the server.
+          # We use 'car' profile by default.
+          args: 
+            - |
+              if [ ! -f /data/map.osrm ]; then
+                echo "No map data found. Downloading Iowa (approx 200MB)..."
+                wget http://download.geofabrik.de/north-america/us/iowa-latest.osm.pbf -O /data/data.osm.pbf
+                echo "Extracting map data..."
+                osrm-extract -p /opt/car.lua /data/data.osm.pbf
+                echo "Partitioning map data..."
+                osrm-partition /data/data.osrm
+                echo "Customizing map data..."
+                osrm-customize /data/data.osrm
+                mv /data/data.osrm /data/map.osrm
+                mv /data/data.osrm.* /data/
+              fi
+              echo "Starting OSRM routed..."
+              osrm-routed --algorithm mld /data/map.osrm
+          ports:
+            - containerPort: 5000
+          volumeMounts:
+            - name: osrm-data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi" 
+              cpu: "1000m"
+      volumes:
+        - name: osrm-data
+          persistentVolumeClaim:
+            claimName: osrm-data-pvc

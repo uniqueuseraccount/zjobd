@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import WaypointFuzzinessTool from '../tools/WaypointFuzzinessTool';
 
 function StatCard({ title, value }) {
 	return (
@@ -104,6 +105,11 @@ function Tools() {
 					) : <p className="text-gray-400">Press Preview to see results.</p>}
 				</div>
 			</div>
+
+            <hr className="border-gray-700 my-8" />
+            
+            {/* New Waypoint Fuzziness Tool */}
+            <WaypointFuzzinessTool />
 		</div>
 	);
 }

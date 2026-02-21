@@ -86,6 +86,8 @@ function groupPIDsByScale(selectedPIDs, windowData) {
 
 export default function TripChart({
   log,
+  logs = [], // New prop for comparison mode
+  mode = 'single', // 'single' or 'comparison'
   selectedPIDs = [],
   onPIDChange = () => {},
   chartColors = [],
@@ -96,8 +98,17 @@ export default function TripChart({
   const chartRef = useRef(null);
   const [isZoomed, setIsZoomed] = useState(false);
 
-  const dataRef = useMemo(() => log?.data || [], [log]);
-  const colsRef = useMemo(() => log?.columns || [], [log]);
+  // Determine reference data based on mode
+  const referenceLog = useMemo(() => {
+    if (mode === 'comparison') {
+      // Use the longest log as reference for time axis if possible, or just the first one
+      return logs.length > 0 ? logs[0] : null;
+    }
+    return log;
+  }, [log, logs, mode]);
+
+  const dataRef = useMemo(() => referenceLog?.data || [], [referenceLog]);
+  const colsRef = useMemo(() => referenceLog?.columns || [], [referenceLog]);
 
   const windowData = useMemo(() => {
     const min = Math.max(0, visibleRange?.min ?? 0);
@@ -110,6 +121,9 @@ export default function TripChart({
   const timeLabels = useMemo(() => {
     if (windowData.length === 0) return [];
     
+    // In comparison mode, time is relative offset from start (0s, 3s, 6s...)
+    // In single mode, it's also effectively relative but calculated from timestamps
+    // We'll use the reference log's timestamps to generate labels
     const startTs = Number(dataRef[0]?.timestamp ?? 0);
     
     return windowData.map(row => {
@@ -131,53 +145,95 @@ export default function TripChart({
 
   // Group PIDs by scale requirements and prepare chart data
   const { chartData, samplingActive, useSecondaryScale } = useMemo(() => {
-    const pidGroups = groupPIDsByScale(selectedPIDs, windowData);
     const datasets = [];
     let samplingFlag = false;
-    const hasSecondaryScale = pidGroups.secondary.length > 0;
-    
-    // Process primary scale PIDs
-    pidGroups.primary.forEach(({ pid, idx }) => {
-      let points = windowData.map(row => row?.[pid]);
+    let hasSecondaryScale = false;
+
+    if (mode === 'comparison') {
+      // COMPARISON MODE: Plot ONE PID across MULTIPLE LOGS
+      // Find the first selected PID
+      const targetPID = selectedPIDs.find(p => p && p !== 'none');
       
-      if (points.length > 200) {
-        points = sampleData(points, 200);
-        samplingFlag = true;
+      if (targetPID && logs.length > 0) {
+        logs.forEach((currentLog, idx) => {
+          const logData = currentLog.data || [];
+          // Slice data for this log based on the visible range indices
+          // Note: This assumes roughly similar sampling rates. 
+          // If rates differ significantly, time-based slicing would be better.
+          const min = Math.max(0, visibleRange?.min ?? 0);
+          const max = Math.min((logData.length - 1), visibleRange?.max ?? 0);
+          
+          let points = [];
+          if (max >= min) {
+             points = logData.slice(min, max + 1).map(row => row?.[targetPID]);
+          }
+
+          if (points.length > 200) {
+            points = sampleData(points, 200);
+            samplingFlag = true;
+          }
+
+          datasets.push({
+            label: `${currentLog.name || `Log ${currentLog.id}`} - ${targetPID}`,
+            data: points,
+            borderColor: chartColors[idx] || '#38BDF8',
+            backgroundColor: chartColors[idx] || '#38BDF8',
+            pointRadius: 0,
+            borderWidth: 2,
+            tension: 0.4,
+            yAxisID: 'y'
+          });
+        });
       }
 
-      datasets.push({
-        label: pid,
-        data: points,
-        borderColor: chartColors[idx] || '#38BDF8',
-        backgroundColor: chartColors[idx] || '#38BDF8',
-        pointRadius: 0,
-        borderWidth: 2,
-        tension: 0.4,
-        yAxisID: 'y'
-      });
-    });
-
-    // Process secondary scale PIDs (dashed lines)
-    pidGroups.secondary.forEach(({ pid, idx }) => {
-      let points = windowData.map(row => row?.[pid]);
+    } else {
+      // SINGLE MODE: Plot MULTIPLE PIDS for ONE LOG (Existing Logic)
+      const pidGroups = groupPIDsByScale(selectedPIDs, windowData);
+      hasSecondaryScale = pidGroups.secondary.length > 0;
       
-      if (points.length > 200) {
-        points = sampleData(points, 200);
-        samplingFlag = true;
-      }
+      // Process primary scale PIDs
+      pidGroups.primary.forEach(({ pid, idx }) => {
+        let points = windowData.map(row => row?.[pid]);
+        
+        if (points.length > 200) {
+          points = sampleData(points, 200);
+          samplingFlag = true;
+        }
 
-      datasets.push({
-        label: pid,
-        data: points,
-        borderColor: chartColors[idx] || '#38BDF8',
-        backgroundColor: chartColors[idx] || '#38BDF8',
-        pointRadius: 0,
-        borderWidth: 2,
-        borderDash: [5, 5], // Dashed line for secondary scale
-        tension: 0.4,
-        yAxisID: 'y1'
+        datasets.push({
+          label: pid,
+          data: points,
+          borderColor: chartColors[idx] || '#38BDF8',
+          backgroundColor: chartColors[idx] || '#38BDF8',
+          pointRadius: 0,
+          borderWidth: 2,
+          tension: 0.4,
+          yAxisID: 'y'
+        });
       });
-    });
+
+      // Process secondary scale PIDs (dashed lines)
+      pidGroups.secondary.forEach(({ pid, idx }) => {
+        let points = windowData.map(row => row?.[pid]);
+        
+        if (points.length > 200) {
+          points = sampleData(points, 200);
+          samplingFlag = true;
+        }
+
+        datasets.push({
+          label: pid,
+          data: points,
+          borderColor: chartColors[idx] || '#38BDF8',
+          backgroundColor: chartColors[idx] || '#38BDF8',
+          pointRadius: 0,
+          borderWidth: 2,
+          borderDash: [5, 5], // Dashed line for secondary scale
+          tension: 0.4,
+          yAxisID: 'y1'
+        });
+      });
+    }
 
     return {
       chartData: {
@@ -187,27 +243,43 @@ export default function TripChart({
       samplingActive: samplingFlag,
       useSecondaryScale: hasSecondaryScale
     };
-  }, [windowData, selectedPIDs, chartColors, timeLabels]);
+  }, [windowData, selectedPIDs, chartColors, timeLabels, mode, logs, visibleRange]);
 
   // Chart options with dynamic scaling
   const chartOptions = useMemo(() => {
-    // Calculate scales for primary axis
-    const primaryValues = selectedPIDs
-      .filter((pid, idx) => {
-        if (!pid || pid === 'none') return false;
-        const pidGroups = groupPIDsByScale(selectedPIDs, windowData);
-        return pidGroups.primary.some(p => p.pid === pid);
-      })
-      .flatMap(pid => windowData.map(r => r?.[pid]).filter(v => typeof v === 'number'));
+    let primaryValues = [];
+    let secondaryValues = [];
 
-    // Calculate scales for secondary axis
-    const secondaryValues = selectedPIDs
-      .filter((pid, idx) => {
-        if (!pid || pid === 'none') return false;
-        const pidGroups = groupPIDsByScale(selectedPIDs, windowData);
-        return pidGroups.secondary.some(p => p.pid === pid);
-      })
-      .flatMap(pid => windowData.map(r => r?.[pid]).filter(v => typeof v === 'number'));
+    if (mode === 'comparison') {
+       const targetPID = selectedPIDs.find(p => p && p !== 'none');
+       if (targetPID) {
+         primaryValues = logs.flatMap(l => {
+            // Get data for this log in the visible window
+            const d = l.data || [];
+            const min = Math.max(0, visibleRange?.min ?? 0);
+            const max = Math.min((d.length - 1), visibleRange?.max ?? 0);
+            if (max < min) return [];
+            return d.slice(min, max + 1).map(r => r?.[targetPID]).filter(v => typeof v === 'number');
+         });
+       }
+    } else {
+        // Single mode logic (existing)
+        primaryValues = selectedPIDs
+          .filter((pid, idx) => {
+            if (!pid || pid === 'none') return false;
+            const pidGroups = groupPIDsByScale(selectedPIDs, windowData);
+            return pidGroups.primary.some(p => p.pid === pid);
+          })
+          .flatMap(pid => windowData.map(r => r?.[pid]).filter(v => typeof v === 'number'));
+
+        secondaryValues = selectedPIDs
+          .filter((pid, idx) => {
+            if (!pid || pid === 'none') return false;
+            const pidGroups = groupPIDsByScale(selectedPIDs, windowData);
+            return pidGroups.secondary.some(p => p.pid === pid);
+          })
+          .flatMap(pid => windowData.map(r => r?.[pid]).filter(v => typeof v === 'number'));
+    }
 
     const scales = {
       x: { 
@@ -230,7 +302,7 @@ export default function TripChart({
       }
     };
 
-    if (useSecondaryScale) {
+    if (useSecondaryScale && mode !== 'comparison') {
       scales.y1 = {
         type: needsLogScale(secondaryValues) ? 'logarithmic' : 'linear',
         position: 'right',
@@ -310,7 +382,7 @@ export default function TripChart({
       },
       scales
     };
-  }, [windowData, selectedPIDs, useSecondaryScale, visibleRange, dataRef.length, setVisibleRange, onChartZoom]);
+  }, [windowData, selectedPIDs, useSecondaryScale, visibleRange, dataRef.length, setVisibleRange, onChartZoom, mode, logs, chartColors]);
 
   // Handle zoom buttons
   const handleZoom = useCallback((minutes) => {

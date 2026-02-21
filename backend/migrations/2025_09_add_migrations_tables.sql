@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS track_segments (
   segment_id         INT AUTO_INCREMENT PRIMARY KEY,
   track_id           INT NOT NULL,
   segment_index      INT DEFAULT 1,                           -- order within track
+  segment_length     FLOAT,                                   -- length in miles
+  segment_duration_seconds FLOAT,                             -- duration in seconds
   start_waypoint_id  INT,
   end_waypoint_id    INT,
   created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

@@ -79,7 +79,7 @@ def parse_start_timestamp(file_path):
                     
                     # List of possible formats to try parsing.
                     possible_formats = [
-                        "%m/%d/%Y %I:%M:%S.%f %p",  # MM/DD/YYYY HH:MM:SS.ms AM/PM
+                        "%m/%d/%Y %I:%M:%S.%f %p",  # MM/DD/YYYY HH:MM:SS.SSSS AM/PM (New 2026 format)
                         "%m/%d/%Y %I:%M:%S %p",     # MM/DD/YYYY HH:MM:SS AM/PM
                         "%Y-%m-%d %H:%M:%S",       # YYYY-MM-DD HH:MM:SS (24-hour)
                     ]
@@ -98,12 +98,11 @@ def parse_start_timestamp(file_path):
                         return None
 
                     cst_dt = cst.localize(local_dt)
-                    unix_timestamp = int(cst_dt.timestamp())
-                    logging.info(f"  > Converted to Unix timestamp (UTC): {unix_timestamp}")
-                    return unix_timestamp
+                    logging.info(f"  > Parsed as CST datetime: {cst_dt}")
+                    return cst_dt
                 
                 if line.strip() and not line.strip().startswith('#'):
-                    logging.warning(f"  STOP: Reached non-comment line without finding timestamp.")
+                    logging.info(f"  INFO: Reached data/header line without finding comment timestamp. Fallback will be used.")
                     break
     except Exception as e:
         logging.error(f"  ERROR: An exception occurred while reading {file_path}: {e}")

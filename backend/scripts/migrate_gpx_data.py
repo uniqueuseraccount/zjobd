@@ -36,6 +36,13 @@ def main():
     conn = mysql.connector.connect(**DB_CONFIG)
     cur = conn.cursor(dictionary=True)
 
+    # 0) Clear existing data to fix broken IDs
+    logger.info("Clearing existing GPX tables...")
+    cur.execute("SET FOREIGN_KEY_CHECKS = 0")
+    for tbl in ('track_segments', 'tracks', 'waypoints'):
+        cur.execute(f"TRUNCATE TABLE {tbl}")
+    cur.execute("SET FOREIGN_KEY_CHECKS = 1")
+
     # 1) Seed waypoints from existing trips table
     logger.info("Inserting start/end waypoints from trips.")
     wayp_insert = """
@@ -62,7 +69,7 @@ def main():
       INSERT INTO tracks (source_log_id, file_name, start_time, duration_seconds, column_ids_json)
       SELECT li.log_id,
              li.file_name,
-             FROM_UNIXTIME(li.start_timestamp),
+             li.start_time,
              li.trip_duration_seconds,
              li.column_ids_json
       FROM log_index li
@@ -85,9 +92,10 @@ def main():
     # 4) One default segment per track
     logger.info("Seeding one default track_segment per track.")
     seg_insert = """
-      INSERT INTO track_segments (track_id, segment_index, start_waypoint_id, end_waypoint_id)
-      SELECT t.track_id, 1, t.start_waypoint_id, t.end_waypoint_id
+      INSERT INTO track_segments (track_id, segment_index, start_waypoint_id, end_waypoint_id, segment_length, segment_duration_seconds)
+      SELECT t.track_id, 1, t.start_waypoint_id, t.end_waypoint_id, tr.distance_miles, t.duration_seconds
       FROM tracks t
+      JOIN trips tr ON tr.log_id = t.source_log_id
       ON DUPLICATE KEY UPDATE start_waypoint_id=VALUES(start_waypoint_id);
     """
     cur.execute(seg_insert)

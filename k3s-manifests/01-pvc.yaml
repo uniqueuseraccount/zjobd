@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: osrm-data-pvc
+  namespace: osrm
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: nfs-client # Assuming standard K3s/NFS setup, adjust if your storage class is named differently (e.g., 'nfs-storage')
+  resources:
+    requests:
+      storage: 5Gi

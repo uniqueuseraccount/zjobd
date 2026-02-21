@@ -1,0 +1,68 @@
+2026-02-14 14:05:25,984 - INFO     - Verifying database schema before startup...
+2026-02-14 14:05:26,013 - INFO     - Ensuring base tables exist...
+2026-02-14 14:05:26,023 - INFO     - Base tables verification complete.
+2026-02-14 14:05:26,023 - INFO     - Database schema verified successfully.
+2026-02-14 14:05:26,024 - INFO     - Starting Flask web server...
+2026-02-14 14:05:26,024 - INFO     - WATCHDOG: Starting file watcher on directory: /Users/markpotter/zjobd/logs
+2026-02-14 14:05:26,078 - WARNING  -  * Debugger is active!
+2026-02-14 14:05:26,124 - INFO     -  * Debugger PIN: 119-177-869
+2026-02-14 14:05:26,263 - INFO     - WATCHDOG: File watcher started successfully.
+2026-02-14 14:07:58,285 - CRITICAL - DATABASE CONNECTION FAILED: 2005 (HY000): Unknown MySQL server host 'localhost' (8)
+2026-02-14 14:07:58,296 - INFO     - 127.0.0.1 - - [14/Feb/2026 14:07:58] "[35m[1mGET /api/logs HTTP/1.1[0m" 500 -
+2026-02-14 14:07:58,311 - ERROR    - Error on request:
+Traceback (most recent call last):
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/mysql/connector/connection_cext.py", line 354, in _open_connection
+_mysql_connector.MySQLInterfaceError: Unknown MySQL server host 'localhost' (8)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/werkzeug/debug/__init__.py", line 347, in debug_application
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/flask/app.py", line 1536, in __call__
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/flask/app.py", line 1514, in wsgi_app
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/flask_cors/extension.py", line 176, in wrapped_function
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/flask/app.py", line 1511, in wsgi_app
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/flask/app.py", line 919, in full_dispatch_request
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/flask_cors/extension.py", line 176, in wrapped_function
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/flask/app.py", line 917, in full_dispatch_request
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/flask/app.py", line 902, in dispatch_request
+  File "/Users/markpotter/zjobd/backend/app.py", line 61, in get_logs
+  File "/Users/markpotter/zjobd/backend/log2db/db_manager.py", line 22, in __init__
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/mysql/connector/pooling.py", line 322, in connect
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/mysql/connector/connection_cext.py", line 142, in __init__
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/mysql/connector/abstracts.py", line 1604, in connect
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/mysql/connector/connection_cext.py", line 360, in _open_connection
+mysql.connector.errors.DatabaseError: 2005 (HY000): Unknown MySQL server host 'localhost' (8)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/werkzeug/serving.py", line 333, in execute
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/werkzeug/debug/__init__.py", line 362, in debug_application
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/werkzeug/debug/tbtools.py", line 345, in render_debugger_html
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/werkzeug/debug/tbtools.py", line 276, in render_traceback_html
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/werkzeug/utils.py", line 100, in __get__
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/werkzeug/debug/tbtools.py", line 384, in is_library
+  File "/usr/local/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/sysconfig/__init__.py", line 506, in get_paths
+  File "/usr/local/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/sysconfig/__init__.py", line 285, in _expand_vars
+  File "/usr/local/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/sysconfig/__init__.py", line 633, in get_config_vars
+  File "/usr/local/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/sysconfig/__init__.py", line 534, in _init_config_vars
+  File "/usr/local/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/sysconfig/__init__.py", line 402, in _init_posix
+  File "/usr/local/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/sysconfig/__init__.py", line 382, in _get_sysconfigdata
+  File "/usr/local/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/importlib/__init__.py", line 88, in import_module
+  File "<frozen importlib._bootstrap>", line 1398, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1371, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1342, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 938, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 755, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 892, in get_code
+  File "<frozen importlib._bootstrap_external>", line 950, in get_data
+OSError: [Errno 24] Too many open files: '/usr/local/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/_sysconfigdata__darwin_darwin.py'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/werkzeug/serving.py", line 370, in run_wsgi
+  File "/Users/markpotter/zjobd/backend/newvenv/lib/python3.14/site-packages/werkzeug/serving.py", line 346, in execute
+  File "/usr/local/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/selectors.py", line 493, in __init__
+OSError: [Errno 24] Too many open files
