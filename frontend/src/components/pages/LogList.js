@@ -18,7 +18,7 @@ function LogList() {
   useEffect(() => {
 	const fetchLogs = async () => {
 	  try {
-		const response = await axios.get('http://localhost:5001/api/logs');
+		const response = await axios.get('/api/logs');
 		setLogs(response.data);
 		if (response.data.length === 0) {
 		  setStatus('No logs found. Add CSV files to the logs folder!');

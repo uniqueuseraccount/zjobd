@@ -16,7 +16,7 @@ if PROJECT_ROOT not in sys.path:
 
 import logging
 import mysql.connector
-from backend.config.db_credentials import DB_CONFIG
+from config.db_credentials import DB_CONFIG
 
 def main():
     # Setup program_logs directory

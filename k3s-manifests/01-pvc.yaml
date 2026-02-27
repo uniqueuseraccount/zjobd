@@ -2,7 +2,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: osrm-data-pvc
-  namespace: osrm
+  namespace: zjobd
 spec:
   accessModes:
     - ReadWriteOnce

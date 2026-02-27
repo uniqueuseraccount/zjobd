@@ -1,0 +1,9 @@
+2026-02-27 00:34:00,218 - INFO - SEARCH: User searching for logs containing columns: ['hard accel count']
+2026-02-27 00:34:00,253 - INFO - SEARCH: Found 0 matching logs.
+2026-02-27 01:24:08,862 - INFO - SEARCH: User searching for logs containing columns: ['o2 voltage (bank 1 sensor 2)']
+2026-02-27 01:24:10,631 - INFO - SEARCH: Found 1 matching logs.
+2026-02-27 01:24:28,314 - INFO - ARCHIVE_START: Request to archive 1 logs: [213]
+2026-02-27 01:24:28,328 - INFO - ARCHIVE_PROC: Processing log 213 | File: CSVLog_20241115_131807.csv | Start: 2024-11-15 13:18:09.151500
+2026-02-27 01:24:28,329 - INFO - ARCHIVE_DB: Deleting all references for log_id 213 from log_index (Cascading to log_data, trips, tracks)
+2026-02-27 01:24:28,356 - INFO - ARCHIVE_FILE: Successfully moved CSVLog_20241115_131807.csv to /Users/markpotter/zjobd/archive/unused_logs
+2026-02-27 01:24:28,356 - INFO - ARCHIVE_COMPLETE: Successfully processed 1 logs.

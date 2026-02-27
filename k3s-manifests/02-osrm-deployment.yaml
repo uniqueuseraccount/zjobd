@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: osrm-backend
-  namespace: osrm
+  namespace: zjobd
   labels:
     app: osrm-backend
 spec:
@@ -26,20 +26,20 @@ spec:
           # We use 'car' profile by default.
           args: 
             - |
-              if [ ! -f /data/map.osrm ]; then
-                echo "No map data found. Downloading Iowa (approx 200MB)..."
-                wget http://download.geofabrik.de/north-america/us/iowa-latest.osm.pbf -O /data/data.osm.pbf
+              if [ ! -f /data/data.osrm ]; then
+                echo "Installing dependencies..."
+                apt-get update && apt-get install -y wget
+                echo "No map data found. Downloading Minnesota (approx 250MB)..."
+                wget http://download.geofabrik.de/north-america/us/minnesota-latest.osm.pbf -O /data/data.osm.pbf
                 echo "Extracting map data..."
                 osrm-extract -p /opt/car.lua /data/data.osm.pbf
                 echo "Partitioning map data..."
                 osrm-partition /data/data.osrm
                 echo "Customizing map data..."
                 osrm-customize /data/data.osrm
-                mv /data/data.osrm /data/map.osrm
-                mv /data/data.osrm.* /data/
               fi
               echo "Starting OSRM routed..."
-              osrm-routed --algorithm mld /data/map.osrm
+              osrm-routed --algorithm mld /data/data.osrm
           ports:
             - containerPort: 5000
           volumeMounts:

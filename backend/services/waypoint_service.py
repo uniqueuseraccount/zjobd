@@ -1,6 +1,6 @@
 import math
-from backend.log2db.db_manager import DatabaseManager
-from backend.config.db_credentials import DB_CONFIG
+from log2db.db_manager import DatabaseManager
+from config.db_credentials import DB_CONFIG
 
 class WaypointService:
     def __init__(self):

@@ -17,8 +17,11 @@ from datetime import datetime
 import pytz
 
 def setup_logging():
-    """Configures the logging for the application."""
-    log_dir = 'program_logs'
+    """Configures the logging for the application, ensuring logs are in the project root."""
+    # Absolute path to the project root program_logs
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    log_dir = os.path.join(base_dir, 'program_logs')
+    
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     
@@ -37,11 +40,16 @@ def setup_logging():
     return logging.getLogger(__name__)
 
 def sanitize_column_name(header):
-    """Converts a CSV header into a valid SQL column name."""
+    """Converts a CSV header into a valid SQL column name with a 64-char limit."""
     s = re.sub(r'[^a-zA-Z0-9_]', '_', header)
     s = s.strip('_')
     if s and s[0].isdigit():
         s = '_' + s
+    
+    # MySQL limit is 64 chars
+    if len(s) > 64:
+        # Use a hash or just truncate. Truncate is simpler for human readability.
+        s = s[:64].strip('_')
     return s
 
 def infer_mysql_type(value_sample):
@@ -101,10 +109,38 @@ def parse_start_timestamp(file_path):
                     logging.info(f"  > Parsed as CST datetime: {cst_dt}")
                     return cst_dt
                 
+                # If we hit a line that isn't a comment...
                 if line.strip() and not line.strip().startswith('#'):
-                    logging.info(f"  INFO: Reached data/header line without finding comment timestamp. Fallback will be used.")
-                    break
+                    # Only stop searching if it looks like the actual CSV header (contains a comma)
+                    # This allows us to skip non-commented instructions/notes at the top.
+                    if ',' in line:
+                        logging.info(f"  INFO: Reached CSV header line without finding comment timestamp. Trying filename fallback.")
+                        break
     except Exception as e:
         logging.error(f"  ERROR: An exception occurred while reading {file_path}: {e}")
+    
+    # --- Filename Fallback ---
+    # Pattern 1: CSVLog_20220907_213158.csv
+    filename_match1 = re.search(r"CSVLog_(\d{8})_(\d{6})", file_name)
+    if filename_match1:
+        date_str = filename_match1.group(1)
+        time_str = filename_match1.group(2)
+        try:
+            local_dt = datetime.strptime(f"{date_str}_{time_str}", "%Y%m%d_%H%M%S")
+            cst_dt = cst.localize(local_dt)
+            logging.info(f"  SUCCESS: Extracted start time from filename (Pattern 1): {cst_dt}")
+            return cst_dt
+        except ValueError: pass
+
+    # Pattern 2: OBD2_Log_08-08-2025_02_15_51_AM.csv
+    filename_match2 = re.search(r"OBD2_Log_(\d{2}-\d{2}-\d{4}_\d{2}_\d{2}_\d{2}_(?:AM|PM))", file_name, re.IGNORECASE)
+    if filename_match2:
+        ts_str = filename_match2.group(1)
+        try:
+            local_dt = datetime.strptime(ts_str, "%m-%d-%Y_%I_%M_%S_%p")
+            cst_dt = cst.localize(local_dt)
+            logging.info(f"  SUCCESS: Extracted start time from filename (Pattern 2): {cst_dt}")
+            return cst_dt
+        except ValueError: pass
         
     return None

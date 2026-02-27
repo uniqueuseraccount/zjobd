@@ -4,7 +4,7 @@
 # - Returns { columns, data, ... } in JSON
 
 from flask import Blueprint, jsonify
-from backend.db_manager import get_data_for_log
+from db_manager import get_data_for_log
 
 logs_bp = Blueprint('logs', __name__)
 

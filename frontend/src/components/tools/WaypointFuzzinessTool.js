@@ -75,23 +75,28 @@ export default function WaypointFuzzinessTool() {
     // Filter clusters based on minimum size
     const visibleClusters = clusters.filter(c => c.points.length >= minClusterSize);
 
-    // Calculate map center based on first visible cluster or default (only if no bounds set yet)
-    // If we have bounds, we rely on the map keeping its position (which MapContainer does by default unless 'center' changes)
-    const defaultCenter = [39.8283, -98.5795]; 
+    // Calculate map center based on first visible cluster or default
+    const mapCenter = useMemo(() => {
+        if (visibleClusters.length > 0) {
+            return [visibleClusters[0].center.lat, visibleClusters[0].center.lon];
+        }
+        return [39.8283, -98.5795]; // US Center default
+    }, [visibleClusters]);
 
     return (
         <div className="bg-gray-800 rounded-lg shadow-xl p-6 space-y-6 mt-6">
             <div>
-                <h3 className="text-xl font-semibold">Waypoint Clustering Sensitivity</h3>
+                <h3 className="text-xl font-semibold text-cyan-400">Waypoint Clustering Sensitivity</h3>
                 <p className="text-gray-400 mt-1 mb-4">
                     Adjust parameters to group start/end locations. 
-                    <b> Fuzziness</b> determines how close points must be to group together.
-                    <b> Minimum Size</b> filters out random stops (noise) that don't happen often.
+                    <b className="text-gray-300"> Fuzziness</b> determines how close points must be to group together.
+                    <b className="text-gray-300"> Minimum Size</b> filters out random stops (noise) that don't happen often.
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                     {/* Fuzziness Slider */}
-                    <div>
-                        <label className="block text-sm text-gray-400 mb-1">Fuzziness (Distance)</label>
+                    <div className="bg-gray-700/30 p-4 rounded-lg">
+                        <label className="block text-sm text-gray-400 mb-2 font-medium">Fuzziness (Distance)</label>
                         <div className="flex items-center space-x-4">
                             <input 
                                 type="range" 
@@ -102,13 +107,13 @@ export default function WaypointFuzzinessTool() {
                                 onChange={(e) => setFuzziness(parseInt(e.target.value))} 
                                 className="w-full accent-cyan-500" 
                             />
-                            <span className="font-mono text-lg w-16 text-right">{fuzziness} m</span>
+                            <span className="font-mono text-lg w-20 text-right text-cyan-400">{fuzziness} m</span>
                         </div>
                     </div>
 
                     {/* Min Cluster Size Slider */}
-                    <div>
-                        <label className="block text-sm text-gray-400 mb-1">Minimum Cluster Size (Logs)</label>
+                    <div className="bg-gray-700/30 p-4 rounded-lg">
+                        <label className="block text-sm text-gray-400 mb-2 font-medium">Minimum Cluster Size (Logs)</label>
                         <div className="flex items-center space-x-4">
                             <input 
                                 type="range" 
@@ -119,61 +124,66 @@ export default function WaypointFuzzinessTool() {
                                 onChange={(e) => setMinClusterSize(parseInt(e.target.value))} 
                                 className="w-full accent-green-500" 
                             />
-                            <span className="font-mono text-lg w-16 text-right">{minClusterSize}</span>
+                            <span className="font-mono text-lg w-12 text-right text-green-400">{minClusterSize}</span>
                         </div>
                     </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                                            <button 
-                                                onClick={handlePreview} 
-                                                disabled={loading} 
-                                                className="bg-cyan-600 hover:bg-cyan-700 px-6 py-2 rounded-md disabled:opacity-50 text-white font-medium transition-colors"
-                                            >
-                                                {loading ? 'Processing...' : 'Preview Clusters'}
-                                            </button>
-                        
-                                            <button 
-                                                onClick={handleApply} 
-                                                disabled={loading || clusters.length === 0} 
-                                                className="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-md disabled:opacity-50 text-white font-medium transition-colors"
-                                            >
-                                                Apply Clusters
-                                            </button>
-                                                
-                                                <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={limitToView} 
-                                                        onChange={(e) => setLimitToView(e.target.checked)}
-                                                        className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500 bg-gray-700 border-gray-600"
-                                                    />
-                                                    <span>Limit to Map View (Recommended)</span>
-                                                </label>
-                                            </div>
-                                            
-                                            {stats && (
-                                                <div className="text-sm">
-                                                    <span className="text-gray-400">Clusters in Area: </span>
-                                                    <span className="text-white font-bold mr-4">{stats.count}</span>
-                                                    
-                                                    <span className="text-gray-400">Visible: </span>
-                                                    <span className="text-green-400 font-bold">{visibleClusters.length}</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                        
-                                        {applyStatus && (
-                                            <div className={`mt-2 p-3 rounded ${applyStatus.type === 'success' ? 'bg-green-900 text-green-200' : 'bg-red-900 text-red-200'}`}>
-                                                {applyStatus.message}
-                                            </div>
-                                        )}
-                                    </div>
-                        
-                                    <div className="h-[500px] w-full bg-gray-900 rounded-lg overflow-hidden border border-gray-700 relative">                <MapContainer 
-                    center={defaultCenter} 
-                    zoom={4} 
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center space-x-3">
+                        <button 
+                            onClick={handlePreview} 
+                            disabled={loading} 
+                            className="bg-cyan-600 hover:bg-cyan-700 px-6 py-2 rounded-md disabled:opacity-50 text-white font-medium transition-colors shadow-lg"
+                        >
+                            {loading ? 'Processing...' : 'Preview Clusters'}
+                        </button>
+    
+                        <button 
+                            onClick={handleApply} 
+                            disabled={loading || clusters.length === 0} 
+                            className="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-md disabled:opacity-50 text-white font-medium transition-colors shadow-lg"
+                        >
+                            Apply Clusters
+                        </button>
+                            
+                        <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer ml-2">
+                            <input 
+                                type="checkbox" 
+                                checked={limitToView} 
+                                onChange={(e) => setLimitToView(e.target.checked)}
+                                className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500 bg-gray-700 border-gray-600"
+                            />
+                            <span>Limit to Map View</span>
+                        </label>
+                    </div>
+                    
+                    {stats && (
+                        <div className="text-sm bg-gray-900/50 px-3 py-1 rounded-full border border-gray-700">
+                            <span className="text-gray-400">Found: </span>
+                            <span className="text-white font-bold mr-4">{stats.count}</span>
+                            
+                            <span className="text-gray-400">Visible: </span>
+                            <span className="text-green-400 font-bold">{visibleClusters.length}</span>
+                        </div>
+                    )}
+                </div>
+                
+                {applyStatus && (
+                    <div className={`mt-4 p-3 rounded-md border ${
+                        applyStatus.type === 'success' 
+                            ? 'bg-green-900/20 border-green-500 text-green-200' 
+                            : 'bg-red-900/20 border-red-500 text-red-200'
+                    }`}>
+                        {applyStatus.message}
+                    </div>
+                )}
+            </div>
+
+            <div className="h-[500px] w-full bg-gray-900 rounded-lg overflow-hidden border border-gray-700 relative shadow-inner">
+                <MapContainer 
+                    center={mapCenter} 
+                    zoom={visibleClusters.length > 0 ? 12 : 4} 
                     style={{ height: '100%', width: '100%' }}
                 >
                     <TileLayer
@@ -188,14 +198,14 @@ export default function WaypointFuzzinessTool() {
                             <CircleMarker 
                                 center={[cluster.center.lat, cluster.center.lon]}
                                 pathOptions={{ color: '#10B981', fillColor: '#10B981', fillOpacity: 0.8 }}
-                                radius={Math.min(20, 5 + cluster.points.length)} // Dynamic size
+                                radius={Math.min(20, 5 + cluster.points.length)}
                             >
                                 <Tooltip direction="top" offset={[0, -10]} opacity={1}>
-                                    <span>Cluster #{idx + 1} ({cluster.points.length} points)</span>
+                                    <span>Location {idx + 1} ({cluster.points.length} points)</span>
                                 </Tooltip>
                             </CircleMarker>
 
-                            {/* Individual Points in Cluster (Only show if clustered) */}
+                            {/* Individual Points in Cluster */}
                             {cluster.points.map((point, pIdx) => (
                                 <CircleMarker 
                                     key={`${idx}-${pIdx}`}

@@ -3,7 +3,7 @@
 # - Returns { logs, log_data } where log_data maps log_id -> list of rows
 
 from flask import Blueprint, jsonify
-from backend.db_manager import get_trip_group_logs, get_data_for_log
+from db_manager import get_trip_group_logs, get_data_for_log
 
 trips_bp = Blueprint('trips', __name__)
 

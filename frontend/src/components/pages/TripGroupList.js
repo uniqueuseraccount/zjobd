@@ -18,7 +18,7 @@ function TripGroupList() {
 	useEffect(() => {
 		const fetchGroups = async () => {
 			try {
-				const response = await axios.get('http://localhost:5001/api/trip-groups');
+				const response = await axios.get('/api/trip-groups');
 				setGroups(response.data);
 				if (response.data.length === 0) {
 					setStatus('No trip groups found. Run the grouping script or add more logs with similar start/end points.');

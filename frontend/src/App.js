@@ -11,7 +11,11 @@ import LogList from './components/pages/LogList';
 import LogDetail from './components/pages/LogDetail';
 import TripGroupList from './components/pages/TripGroupList';
 import TripGroupDetail from './components/pages/TripGroupDetail';
-import Tools from './components/pages/Tools'; // New
+import TrackGroupList from './components/pages/TrackGroupList'; 
+import TrackGroupDetail from './components/pages/TrackGroupDetail'; 
+import MapHeatmap from './components/pages/MapHeatmap'; // New
+import Tools from './components/pages/Tools';
+import Maintenance from './components/pages/Maintenance';
 
 function App() {
   return (
@@ -26,8 +30,17 @@ function App() {
               <Link to="/trip-groups" className="text-lg text-gray-300 hover:text-cyan-400">
                 Trip Groups
               </Link>
+              <Link to="/track-groups" className="text-lg text-gray-300 hover:text-cyan-400">
+                Track Groups
+              </Link>
+              <Link to="/map" className="text-lg text-gray-300 hover:text-cyan-400">
+                Map Heatmap
+              </Link>
               <Link to="/tools" className="text-lg text-gray-300 hover:text-cyan-400">
                 Tools
+              </Link>
+              <Link to="/maintenance" className="text-lg text-gray-300 hover:text-cyan-400">
+                Maintenance
               </Link>
             </nav>
           </header>
@@ -37,11 +50,15 @@ function App() {
               <Route path="/logs/:logId" element={<LogDetail />} />
               <Route path="/trip-groups" element={<TripGroupList />} />
               <Route path="/trip-groups/:groupId" element={<TripGroupDetail />} />
+              <Route path="/track-groups" element={<TrackGroupList />} />
+              <Route path="/track-groups/:startId/:endId" element={<TrackGroupDetail />} />
+              <Route path="/map" element={<MapHeatmap />} />
               <Route path="/tools" element={<Tools />} />
+              <Route path="/maintenance" element={<Maintenance />} />
             </Routes>
           </main>
           <footer className="text-center mt-8 text-gray-500 text-sm">
-            <p>Jeep Log Processor v1.8.0</p>
+            <p>Jeep Log Processor v1.9.1</p>
           </footer>
         </div>
       </div>

@@ -17,16 +17,33 @@ def find_header_row(file_path):
     with open(file_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
         for i, line in enumerate(f):
             line = line.strip()
-            if line and not line.startswith('#'):
-                reader = csv.reader([line])
+            # Skip comments and empty lines
+            if not line or line.startswith('#'):
+                continue
+            
+            # Robustness: Real headers in this app always have commas and aren't massive paragraphs
+            if ',' not in line or len(line) > 1000:
+                continue
+
+            reader = csv.reader([line])
+            try:
                 raw_headers = next(reader)
-                normalized_headers = []
-                for h in raw_headers:
-                    no_units = re.sub(r'\s*\([^)]*\)$', '', h)
-                    no_extra_space = re.sub(r'\s+', ' ', no_units).strip()
-                    final_header = no_extra_space.lower()
-                    normalized_headers.append(final_header)
-                return i, normalized_headers
+            except (csv.Error, StopIteration):
+                continue
+
+            if not raw_headers or len(raw_headers) < 2:
+                continue
+
+            normalized_headers = []
+            for h in raw_headers:
+                no_units = re.sub(r'\s*\([^)]*\)$', '', h)
+                no_extra_space = re.sub(r'\s+', ' ', no_units).strip()
+                final_header = no_extra_space.lower()
+                normalized_headers.append(final_header)
+            
+            # Valid header rows should probably have something like 'time' or 'rpm' or common OBD2 terms
+            # but let's just stick to the comma and length check for now as it solves the immediate issue.
+            return i, normalized_headers
     return -1, None
 
 def process_log_file(file_path, db_manager):
@@ -82,10 +99,11 @@ def process_log_file(file_path, db_manager):
     data_rows = classify_operating_states(data_rows, headers)
 
     defined_columns = db_manager.get_all_defined_columns()
+    blacklist = db_manager.get_blacklist()
     
     first_data_row = data_rows[0]
-    # Filter out 'time' from headers for DB column creation
-    db_headers = [h for h in headers if h.lower() != 'time']
+    # Filter out 'time' and blacklisted columns from headers for DB column creation
+    db_headers = [h for h in headers if h.lower() != 'time' and h not in blacklist]
     
     for header in db_headers:
         if header not in defined_columns:
@@ -133,8 +151,9 @@ def process_log_file(file_path, db_manager):
     log_id = db_manager.insert_log_index(file_name, start_timestamp, duration, column_ids_json)
     if not log_id: return False, "error"
 
-    # Column map should only include columns that actually exist in log_data (excluding row_time/operating_state)
+    # Column maps: one filtered (log_data), one full (log_data_raw)
     column_map = {h: defined_columns[h]['sanitized_name'] for h in db_headers if h in defined_columns}
+    raw_column_map = {h: defined_columns[h]['sanitized_name'] for h in headers if h.lower() != 'time' and h in defined_columns}
 
     if data_rows:
         logging.info(f"Row timestamps calculated. First: {data_rows[0]['row_time']}, Last: {data_rows[-1]['row_time']}")
@@ -142,7 +161,7 @@ def process_log_file(file_path, db_manager):
     batch_size = 500
     for i in range(0, len(data_rows), batch_size):
         batch = data_rows[i:i + batch_size]
-        db_manager.insert_log_data_batch(log_id, batch, column_map)
+        db_manager.insert_log_data_batch(log_id, batch, column_map, raw_column_map)
 
     logging.info(f"Successfully processed and ingested '{file_name}'.")
     return True, "processed"

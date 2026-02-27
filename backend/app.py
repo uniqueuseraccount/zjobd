@@ -9,7 +9,7 @@ from threading import Thread
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver as Observer
 from watchdog.events import FileSystemEventHandler
 
 try:
@@ -19,6 +19,9 @@ try:
 	from log2db.core import process_log_file
 	from archive.group_trips import group_trips_logic
 	from api.tools import tools_bp
+	from api.groups import groups_bp
+	from api.map import map_bp
+	from api.maintenance import maintenance_bp
 except ImportError as e:
 	print(f"FATAL: A required file or module could not be imported: {e}", file=sys.stderr)
 	sys.exit(1)
@@ -29,6 +32,9 @@ logger = logging.getLogger(__name__)
 
 # Register Blueprints
 app.register_blueprint(tools_bp)
+app.register_blueprint(groups_bp)
+app.register_blueprint(map_bp)
+app.register_blueprint(maintenance_bp)
 
 # Global queue for files waiting to be processed
 processing_queue = queue.Queue()
@@ -215,10 +221,10 @@ def apply_grouping():
 		return jsonify({"error": "Failed to apply grouping."}), 500
 
 if __name__ == '__main__':
-	if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-		logger = setup_logging() 
-		app.logger.handlers.extend(logger.handlers)
-		app.logger.setLevel(logging.INFO)
+	# Initialize logging immediately on startup
+	logger = setup_logging() 
+	app.logger.handlers.extend(logger.handlers)
+	app.logger.setLevel(logging.INFO)
 	
 	app.logger.info("Verifying database schema before startup...")
 	startup_db_manager = DatabaseManager(DB_CONFIG)

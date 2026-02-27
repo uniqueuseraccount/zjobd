@@ -36,6 +36,7 @@ function MapController({ bounds, shouldUpdateBounds }) {
 
 export default function TripMap({
   primaryPath,
+  secondaryPaths = [], // New prop for comparison mode
   columns = ['latitude', 'longitude', 'operating_state'],
   visibleRange,
   showDataPoints = true,
@@ -45,45 +46,54 @@ export default function TripMap({
   const latCol = columns[0];
   const lonCol = columns[1];
 
+  // Combine all paths for context and bounds
+  const allPaths = useMemo(() => [primaryPath, ...secondaryPaths].filter(Boolean), [primaryPath, secondaryPaths]);
+
   // Get the full path for context (lighter color)
-  const fullPath = useMemo(() => {
-    if (!Array.isArray(primaryPath)) return [];
-    
-    return primaryPath
-      .map(r => [r?.[latCol], r?.[lonCol]])
-      .filter(([lat, lon]) => 
-        typeof lat === 'number' && 
-        typeof lon === 'number' && 
-        lat !== 0 && 
-        lon !== 0
-      );
-  }, [primaryPath, latCol, lonCol]);
+  const fullPaths = useMemo(() => {
+    return allPaths.map(path => 
+      path
+        .map(r => [r?.[latCol], r?.[lonCol]])
+        .filter(([lat, lon]) => 
+          typeof lat === 'number' && 
+          typeof lon === 'number' && 
+          lat !== 0 && 
+          lon !== 0
+        )
+    ).filter(p => p.length > 0);
+  }, [allPaths, latCol, lonCol]);
 
-  // Get the sliced path that matches the visible range
-  const slicedPath = useMemo(() => {
-    if (!Array.isArray(primaryPath)) return [];
+  // Get the sliced paths that match the visible range
+  const slicedPaths = useMemo(() => {
     const min = Math.max(0, visibleRange?.min ?? 0);
-    const max = Math.min(primaryPath.length - 1, visibleRange?.max ?? 0);
-    return primaryPath.slice(min, max + 1);
-  }, [primaryPath, visibleRange]);
+    const max = visibleRange?.max ?? 0;
+    
+    return allPaths.map(path => {
+        const pMax = Math.min(path.length - 1, max);
+        if (pMax < min) return [];
+        return path.slice(min, pMax + 1);
+    }).filter(p => p.length > 0);
+  }, [allPaths, visibleRange]);
 
-  // Calculate bounds based on the current visible range
+  // Calculate bounds based on all current visible paths
   const bounds = useMemo(() => {
-    const pathToUse = slicedPath.length > 0 ? slicedPath : primaryPath || [];
+    const pathsToUse = slicedPaths.length > 0 ? slicedPaths : allPaths;
     
-    const points = pathToUse
-      .map(r => [r?.[latCol], r?.[lonCol]])
-      .filter(([lat, lon]) => 
-        typeof lat === 'number' && 
-        typeof lon === 'number' && 
-        lat !== 0 && 
-        lon !== 0
-      );
+    const allPoints = pathsToUse.flatMap(path => 
+      path
+        .map(r => [r?.[latCol], r?.[lonCol]])
+        .filter(([lat, lon]) => 
+          typeof lat === 'number' && 
+          typeof lon === 'number' && 
+          lat !== 0 && 
+          lon !== 0
+        )
+    );
     
-    if (!points.length) return [[44.97, -93.26], [44.98, -93.27]];
+    if (!allPoints.length) return [[44.97, -93.26], [44.98, -93.27]];
     
-    const lats = points.map(p => p[0]);
-    const lons = points.map(p => p[1]);
+    const lats = allPoints.map(p => p[0]);
+    const lons = allPoints.map(p => p[1]);
     
     const minLat = Math.min(...lats);
     const maxLat = Math.max(...lats);
@@ -91,81 +101,86 @@ export default function TripMap({
     const maxLon = Math.max(...lons);
     
     // Add slight padding to bounds
-    const latPadding = (maxLat - minLat) * 0.1;
-    const lonPadding = (maxLon - minLon) * 0.1;
+    const latPadding = Math.max((maxLat - minLat) * 0.1, 0.001);
+    const lonPadding = Math.max((maxLon - minLon) * 0.1, 0.001);
     
     return [
       [minLat - latPadding, minLon - lonPadding],
       [maxLat + latPadding, maxLon + lonPadding]
     ];
-  }, [slicedPath, primaryPath, latCol, lonCol]);
+  }, [slicedPaths, allPaths, latCol, lonCol]);
 
-  // Create segments for the visible portion with operating state colors
+  // Create segments for the visible portions with operating state colors
   const visibleSegments = useMemo(() => {
-    const segs = [];
-    let current = { color: STATE_COLORS.default, points: [] };
+    const allSegs = [];
     
-    slicedPath.forEach(row => {
-      const stateColor = STATE_COLORS[row?.operating_state] || STATE_COLORS.default;
-      const lat = row?.[latCol];
-      const lon = row?.[lonCol];
-      const valid = typeof lat === 'number' && typeof lon === 'number' && lat !== 0 && lon !== 0;
-      
-      if (!valid) return;
-      
-      if (stateColor !== current.color && current.points.length > 0) {
-        segs.push(current);
-        current = { color: stateColor, points: [current.points[current.points.length - 1]] };
-      }
-      
-      current.color = stateColor;
-      current.points.push([lat, lon]);
+    slicedPaths.forEach((path, pathIdx) => {
+        let current = { color: STATE_COLORS.default, points: [] };
+        
+        path.forEach(row => {
+          const stateColor = STATE_COLORS[row?.operating_state] || STATE_COLORS.default;
+          const lat = row?.[latCol];
+          const lon = row?.[lonCol];
+          const valid = typeof lat === 'number' && typeof lon === 'number' && lat !== 0 && lon !== 0;
+          
+          if (!valid) return;
+          
+          if (stateColor !== current.color && current.points.length > 0) {
+            allSegs.push(current);
+            current = { color: stateColor, points: [current.points[current.points.length - 1]] };
+          }
+          
+          current.color = stateColor;
+          current.points.push([lat, lon]);
+        });
+        
+        if (current.points.length > 1) allSegs.push(current);
     });
     
-    if (current.points.length > 1) segs.push(current);
-    return segs;
-  }, [slicedPath, latCol, lonCol]);
+    return allSegs;
+  }, [slicedPaths, latCol, lonCol]);
 
   // Create data point markers (sample them if too many)
   const dataPointMarkers = useMemo(() => {
-    if (!showDataPoints || slicedPath.length === 0) return [];
+    if (!showDataPoints || slicedPaths.length === 0) return [];
     
-    const maxMarkers = 50; // Limit markers for performance
-    const step = Math.max(1, Math.floor(slicedPath.length / maxMarkers));
+    const maxTotalMarkers = 100;
+    const allMarkers = [];
     
-    return slicedPath
-      .filter((_, index) => index % step === 0)
-      .map((row, index) => {
-        const lat = row?.[latCol];
-        const lon = row?.[lonCol];
+    slicedPaths.forEach((path, pathIdx) => {
+        const step = Math.max(1, Math.floor(path.length / (maxTotalMarkers / slicedPaths.length)));
         
-        if (typeof lat !== 'number' || typeof lon !== 'number' || lat === 0 || lon === 0) {
-          return null;
-        }
-        
-        return {
-          position: [lat, lon],
-          key: `marker-${index}`,
-          state: row?.operating_state
-        };
-      })
-      .filter(Boolean);
-  }, [slicedPath, showDataPoints, latCol, lonCol]);
+        path.forEach((row, index) => {
+            if (index % step !== 0) return;
+            
+            const lat = row?.[latCol];
+            const lon = row?.[lonCol];
+            
+            if (typeof lat === 'number' && typeof lon === 'number' && lat !== 0 && lon !== 0) {
+                allMarkers.push({
+                    position: [lat, lon],
+                    key: `marker-${pathIdx}-${index}`,
+                    state: row?.operating_state
+                });
+            }
+        });
+    });
+    
+    return allMarkers;
+  }, [slicedPaths, showDataPoints, latCol, lonCol]);
 
-  const shouldUpdateBounds = slicedPath.length > 0;
+  const shouldUpdateBounds = slicedPaths.length > 0;
 
   return (
     <div className="w-full h-[60vh] rounded-lg overflow-hidden bg-gray-900 relative">
       <MapContainer 
         bounds={bounds} 
         style={{ height: '100%', width: '100%' }}
-        zoomControl={false}
-        scrollWheelZoom={false}
-        doubleClickZoom={false}
-        touchZoom={false}
-        dragging={false}
-        boxZoom={false}
-        keyboard={false}
+        zoomControl={true}
+        scrollWheelZoom={true}
+        doubleClickZoom={true}
+        touchZoom={true}
+        dragging={true}
       >
         <MapController bounds={bounds} shouldUpdateBounds={shouldUpdateBounds} />
         
@@ -175,15 +190,16 @@ export default function TripMap({
           attribution='&copy; <a href="https://carto.com/">CartoDB</a>'
         />
         
-        {/* Full path context (lighter/dimmed) */}
-        {fullPath.length > 1 && (
+        {/* Full paths context (lighter/dimmed) */}
+        {fullPaths.map((path, idx) => (
           <Polyline 
-            positions={fullPath} 
+            key={`full-${idx}`}
+            positions={path} 
             color="#4B5563" 
-            weight={2} 
-            opacity={0.5}
+            weight={idx === 0 ? 3 : 1} 
+            opacity={0.3}
           />
-        )}
+        ))}
         
         {/* Highlighted visible segments */}
         {visibleSegments.map((seg, idx) => (
@@ -201,7 +217,7 @@ export default function TripMap({
           <CircleMarker
             key={marker.key}
             center={marker.position}
-            radius={3}
+            radius={2}
             fillColor="#FFFFFF"
             color="#1F2937"
             weight={1}
@@ -211,11 +227,11 @@ export default function TripMap({
       </MapContainer>
       
       {/* Map overlay info */}
-      <div className="absolute top-2 left-2 bg-gray-800 bg-opacity-90 text-white text-xs px-2 py-1 rounded">
-        {slicedPath.length > 0 ? (
-          <>Viewing: {slicedPath.length} data points</>
+      <div className="absolute top-2 left-12 bg-gray-800 bg-opacity-90 text-white text-xs px-2 py-1 rounded z-[1000]">
+        {slicedPaths.length > 0 ? (
+          <>Viewing: {slicedPaths.reduce((acc, p) => acc + p.length, 0)} data points across {slicedPaths.length} trips</>
         ) : (
-          <>Full trip: {primaryPath?.length || 0} points</>
+          <>Full trips: {allPaths.reduce((acc, p) => acc + p.length, 0)} points</>
         )}
       </div>
     </div>

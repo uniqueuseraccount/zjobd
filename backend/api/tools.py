@@ -1,6 +1,6 @@
 
 from flask import Blueprint, request, jsonify
-from backend.services.waypoint_service import WaypointService
+from services.waypoint_service import WaypointService
 
 tools_bp = Blueprint('tools', __name__)
 

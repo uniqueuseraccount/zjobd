@@ -23,7 +23,7 @@ function Tools() {
 	const fetchCurrentStats = useCallback(async () => {
 		setIsLoading(true);
 		try {
-			const response = await axios.get('http://localhost:5001/api/trip-groups/summary');
+			const response = await axios.get('/api/trip-groups/summary');
 			setCurrentStats(response.data);
 		} catch (error) {
 			console.error("Error fetching current stats:", error);
@@ -39,7 +39,7 @@ function Tools() {
 		setIsLoading(true);
 		setApplyStatus('');
 		try {
-			const response = await axios.post('http://localhost:5001/api/trip-groups/preview', { sensitivity });
+			const response = await axios.post('/api/trip-groups/preview', { sensitivity });
 			setPreview(response.data);
 		} catch (error) {
 			console.error("Error fetching preview:", error);
@@ -52,7 +52,7 @@ function Tools() {
 		setIsLoading(true);
 		setApplyStatus('Applying new grouping...');
 		try {
-			const response = await axios.post('http://localhost:5001/api/trips/apply-grouping', { sensitivity });
+			const response = await axios.post('/api/trips/apply-grouping', { sensitivity });
 			setApplyStatus(response.data.message || 'Grouping applied successfully!');
 			fetchCurrentStats();
 		} catch (error) {

@@ -2,38 +2,38 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: osrm-ingress
-  namespace: osrm
-  annotations:
-    kubernetes.io/ingress.class: traefik
+  namespace: zjobd
 spec:
+  ingressClassName: traefik
   rules:
-    - http:
-        paths:
-          - path: /route
-            pathType: Prefix
-            backend:
-              service:
-                name: osrm-service
-                port:
-                  number: 80
-          - path: /match
-            pathType: Prefix
-            backend:
-              service:
-                name: osrm-service
-                port:
-                  number: 80
-          - path: /nearest
-            pathType: Prefix
-            backend:
-              service:
-                name: osrm-service
-                port:
-                  number: 80
-          - path: /table
-            pathType: Prefix
-            backend:
-              service:
-                name: osrm-service
-                port:
-                  number: 80
+  - host: osrm.mark-potter.com
+    http:
+      paths:
+      - path: /route
+        pathType: Prefix
+        backend:
+          service:
+            name: osrm-service
+            port:
+              number: 80
+      - path: /match
+        pathType: Prefix
+        backend:
+          service:
+            name: osrm-service
+            port:
+              number: 80
+      - path: /nearest
+        pathType: Prefix
+        backend:
+          service:
+            name: osrm-service
+            port:
+              number: 80
+      - path: /table
+        pathType: Prefix
+        backend:
+          service:
+            name: osrm-service
+            port:
+              number: 80
