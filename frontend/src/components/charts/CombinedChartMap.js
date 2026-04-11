@@ -24,7 +24,7 @@ export default function CombinedChartMap({
   selectedPIDs = [],
   chartColors = CHART_COLORS,
   visibleRange = { min: 0, max: 0 },
-  mapColumns = ['latitude', 'longitude', 'operating_state']
+  mapColumns = ['latitude', 'longitude']
 }) {
   const dataRef = log?.data || [];
   const latCol = mapColumns[0];

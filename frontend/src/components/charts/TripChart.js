@@ -1,6 +1,8 @@
-// --- VERSION 1.0.0 ---
-// - Enhanced TripChart with logarithmic scaling, proper time axis, dynamic dual scales
-// - Zoom synchronization with map, proper color persistence, enhanced scroll controls
+// --- VERSION 1.5.0 ---
+// - Global Time selection integration
+// - Manual click-drag-release time window selection
+// - Synchronized state with TimeContext and PlaybackContext
+// - Vertical "Now" line for real-time playback visualization
 
 import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react';
 import { Line } from 'react-chartjs-2';
@@ -8,536 +10,227 @@ import {
   Chart as ChartJS, CategoryScale, LinearScale, LogarithmicScale, PointElement, LineElement, Title, Tooltip, Legend
 } from 'chart.js';
 import zoomPlugin from 'chartjs-plugin-zoom';
+import annotationPlugin from 'chartjs-plugin-annotation';
 import PIDSelector from '../shared/PIDSelector';
-import SamplingIndicator from '../shared/SamplingIndicator';
-import { sampleData } from '../../utils/samplingUtils';
-import { getDefaultVisibleRange } from '../../utils/rangeUtils';
+import { useGlobalTime } from '../../context/TimeContext';
+import { usePlayback } from '../../context/PlaybackContext';
 
-ChartJS.register(CategoryScale, LinearScale, LogarithmicScale, PointElement, LineElement, Title, Tooltip, Legend, zoomPlugin);
+ChartJS.register(CategoryScale, LinearScale, LogarithmicScale, PointElement, LineElement, Title, Tooltip, Legend, zoomPlugin, annotationPlugin);
 
 // Function to determine if values need logarithmic scaling
 function needsLogScale(values) {
   const validValues = values.filter(v => typeof v === 'number' && v > 0);
   if (validValues.length === 0) return false;
-  
   const min = Math.min(...validValues);
   const max = Math.max(...validValues);
-  
-  // Use log scale if range spans more than 2 orders of magnitude
   return (max / min) > 100;
 }
 
-// Function to group PIDs by scale requirements
-function groupPIDsByScale(selectedPIDs, windowData) {
-  const pidGroups = { primary: [], secondary: [] };
-  const pidStats = {};
-  
-  selectedPIDs.forEach((pid, idx) => {
-    if (!pid || pid === 'none') return;
-    
-    const values = windowData.map(row => row?.[pid]).filter(v => typeof v === 'number');
-    if (values.length === 0) return;
-    
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const range = max - min;
-    
-    pidStats[pid] = { min, max, range, idx };
+// Smart grouping function
+function groupPIDsByScale(selectedPIDs, data) {
+  const activePIDs = selectedPIDs
+    .map((pid, idx) => ({ pid, idx }))
+    .filter(p => p.pid && p.pid !== 'none');
+
+  if (activePIDs.length <= 1) return { primary: activePIDs, secondary: [] };
+
+  const pidStats = activePIDs.map(p => {
+    const values = data.map(row => row?.[p.pid]).filter(v => typeof v === 'number');
+    return { ...p, max: values.length > 0 ? Math.max(...values) : 0 };
   });
-  
-  const pidEntries = Object.entries(pidStats);
-  if (pidEntries.length === 0) return pidGroups;
-  
-  // Sort by range to group similar scales
-  pidEntries.sort((a, b) => a[1].range - b[1].range);
-  
-  // If there's a large gap in ranges, split into two groups
-  if (pidEntries.length > 1) {
-    const ranges = pidEntries.map(([_, stats]) => stats.range);
-    const maxRange = Math.max(...ranges);
-    const minRange = Math.min(...ranges);
-    
-    // If largest range is 10x bigger than smallest, use dual scale
-    if (maxRange / minRange > 10) {
-      const threshold = Math.sqrt(maxRange * minRange); // Geometric mean as threshold
-      
-      pidEntries.forEach(([pid, stats]) => {
-        if (stats.range > threshold) {
-          pidGroups.secondary.push({ pid, ...stats });
-        } else {
-          pidGroups.primary.push({ pid, ...stats });
-        }
-      });
-    } else {
-      // All PIDs use primary scale
-      pidEntries.forEach(([pid, stats]) => {
-        pidGroups.primary.push({ pid, ...stats });
-      });
-    }
-  } else {
-    // Single PID uses primary scale
-    pidEntries.forEach(([pid, stats]) => {
-      pidGroups.primary.push({ pid, ...stats });
-    });
+
+  const sorted = [...pidStats].sort((a, b) => a.max - b.max);
+  let splitIdx = 0;
+  let maxGap = -1;
+
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const val1 = Math.max(0.1, sorted[i].max);
+    const val2 = Math.max(0.1, sorted[i+1].max);
+    const gap = Math.log10(val2) - Math.log10(val1);
+    if (gap > maxGap) { maxGap = gap; splitIdx = i; }
   }
-  
-  return pidGroups;
+
+  if (maxGap < 0.5) return { primary: activePIDs, secondary: [] };
+  return { secondary: sorted.slice(0, splitIdx + 1), primary: sorted.slice(splitIdx + 1) };
+}
+
+function scaleRPM(val) {
+  if (typeof val !== 'number') return val;
+  if (val <= 1000) return val / 10;
+  else if (val <= 4000) return 100 + (val - 1000) / 100;
+  else return 130 + (val - 4000) / 10;
 }
 
 export default function TripChart({
   log,
-  logs = [], // New prop for comparison mode
-  mode = 'single', // 'single' or 'comparison'
+  logs = [], 
+  mode = 'single', 
   selectedPIDs = [],
   onPIDChange = () => {},
-  chartColors = [],
-  visibleRange = { min: 0, max: 0 },
-  setVisibleRange = () => {},
-  onChartZoom = () => {}
+  chartColors = []
 }) {
+  const { visibleRange, setVisibleRange, totalLength } = useGlobalTime();
+  const { currentFrame, isPlaying } = usePlayback();
   const chartRef = useRef(null);
-  const [isZoomed, setIsZoomed] = useState(false);
+  const [key, setKey] = useState(0); 
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectionStart, setSelectionStart] = useState(null);
+  const [selectionEnd, setSelectionEnd] = useState(null);
 
-  // Determine reference data based on mode
-  const referenceLog = useMemo(() => {
-    if (mode === 'comparison') {
-      // Use the longest log as reference for time axis if possible, or just the first one
-      return logs.length > 0 ? logs[0] : null;
-    }
-    return log;
-  }, [log, logs, mode]);
+  useEffect(() => {
+    setKey(prev => prev + 1);
+  }, [log?.data?.length, mode, selectedPIDs.join(',')]);
 
+  const referenceLog = useMemo(() => mode === 'comparison' ? (logs.length > 0 ? logs[0] : null) : log, [log, logs, mode]);
   const dataRef = useMemo(() => referenceLog?.data || [], [referenceLog]);
   const colsRef = useMemo(() => referenceLog?.columns || [], [referenceLog]);
 
   const windowData = useMemo(() => {
     const min = Math.max(0, visibleRange?.min ?? 0);
     const max = Math.min((dataRef.length - 1), visibleRange?.max ?? 0);
-    if (dataRef.length === 0 || max < min) return [];
-    return dataRef.slice(min, max + 1);
+    return (dataRef.length === 0 || max < min) ? [] : dataRef.slice(min, max + 1);
   }, [dataRef, visibleRange]);
 
-  // Generate time labels based on elapsed time from start
+  const bufferData = useMemo(() => {
+    const size = (visibleRange?.max ?? 0) - (visibleRange?.min ?? 0);
+    const bufferMin = Math.max(0, (visibleRange?.min ?? 0) - size * 5);
+    const bufferMax = Math.min(dataRef.length - 1, (visibleRange?.max ?? 0) + size * 5);
+    return dataRef.slice(bufferMin, bufferMax + 1);
+  }, [dataRef, visibleRange]);
+
   const timeLabels = useMemo(() => {
     if (windowData.length === 0) return [];
-    
-    // In comparison mode, time is relative offset from start (0s, 3s, 6s...)
-    // In single mode, it's also effectively relative but calculated from timestamps
-    // We'll use the reference log's timestamps to generate labels
     const startTs = Number(dataRef[0]?.timestamp ?? 0);
-    
     return windowData.map(row => {
-      const currentTs = Number(row?.timestamp ?? 0);
-      const elapsedMs = currentTs - startTs;
-      const elapsedSec = Math.max(0, Math.floor(elapsedMs / 1000));
-      
-      const hours = Math.floor(elapsedSec / 3600);
-      const minutes = Math.floor((elapsedSec % 3600) / 60);
-      const seconds = elapsedSec % 60;
-      
-      if (hours > 0) {
-        return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-      } else {
-        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-      }
+      const elapsedSec = Math.max(0, Math.floor((Number(row?.timestamp ?? 0) - startTs) / 1000));
+      const h = Math.floor(elapsedSec / 3600);
+      const m = Math.floor((elapsedSec % 3600) / 60);
+      const s = elapsedSec % 60;
+      return h > 0 ? `${h}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}` : `${m}:${s.toString().padStart(2,'0')}`;
     });
   }, [windowData, dataRef]);
 
-  // Group PIDs by scale requirements and prepare chart data
-  const { chartData, samplingActive, useSecondaryScale } = useMemo(() => {
+  const { chartData, useSecondaryScale } = useMemo(() => {
     const datasets = [];
-    let samplingFlag = false;
     let hasSecondaryScale = false;
 
     if (mode === 'comparison') {
-      // COMPARISON MODE: Plot ONE PID across MULTIPLE LOGS
-      // Find the first selected PID
-      const targetPID = selectedPIDs.find(p => p && p !== 'none');
-      
-      if (targetPID && logs.length > 0) {
-        logs.forEach((currentLog, idx) => {
-          const logData = currentLog.data || [];
-          // Slice data for this log based on the visible range indices
-          // Note: This assumes roughly similar sampling rates. 
-          // If rates differ significantly, time-based slicing would be better.
-          const min = Math.max(0, visibleRange?.min ?? 0);
-          const max = Math.min((logData.length - 1), visibleRange?.max ?? 0);
-          
-          let points = [];
-          if (max >= min) {
-             points = logData.slice(min, max + 1).map(row => row?.[targetPID]);
-          }
-
-          if (points.length > 200) {
-            points = sampleData(points, 200);
-            samplingFlag = true;
-          }
-
+      const active = selectedPIDs.filter(p => p && p !== 'none');
+      logs.forEach((currentLog, lIdx) => {
+        const d = currentLog.data || [];
+        active.forEach((pid, pIdx) => {
+          const points = d.slice(visibleRange.min, visibleRange.max + 1).map(r => (pid === 'engine_rpm') ? scaleRPM(r?.[pid]) : r?.[pid]);
           datasets.push({
-            label: `${currentLog.name || `Log ${currentLog.id}`} - ${targetPID}`,
+            label: `${currentLog.name || `Log ${currentLog.id}`} - ${pid}`,
             data: points,
-            borderColor: chartColors[idx] || '#38BDF8',
-            backgroundColor: chartColors[idx] || '#38BDF8',
-            pointRadius: 0,
-            borderWidth: 2,
-            tension: 0.4,
-            yAxisID: 'y'
+            borderColor: chartColors[pIdx] || '#38BDF8',
+            backgroundColor: chartColors[pIdx] || '#38BDF8',
+            pointRadius: 0, borderWidth: 2, borderDash: currentLog.lineStyle || [], tension: 0.4, yAxisID: 'y'
           });
         });
-      }
-
+      });
     } else {
-      // SINGLE MODE: Plot MULTIPLE PIDS for ONE LOG (Existing Logic)
-      const pidGroups = groupPIDsByScale(selectedPIDs, windowData);
+      const pidGroups = groupPIDsByScale(selectedPIDs, bufferData);
       hasSecondaryScale = pidGroups.secondary.length > 0;
-      
-      // Process primary scale PIDs
       pidGroups.primary.forEach(({ pid, idx }) => {
-        let points = windowData.map(row => row?.[pid]);
-        
-        if (points.length > 200) {
-          points = sampleData(points, 200);
-          samplingFlag = true;
-        }
-
         datasets.push({
-          label: pid,
-          data: points,
-          borderColor: chartColors[idx] || '#38BDF8',
-          backgroundColor: chartColors[idx] || '#38BDF8',
-          pointRadius: 0,
-          borderWidth: 2,
-          tension: 0.4,
-          yAxisID: 'y'
+          label: pid === 'engine_rpm' ? 'Engine RPM (Non-linear)' : pid,
+          data: windowData.map(r => (pid === 'engine_rpm') ? scaleRPM(r?.[pid]) : r?.[pid]),
+          borderColor: chartColors[idx] || '#38BDF8', backgroundColor: chartColors[idx] || '#38BDF8',
+          pointRadius: 0, borderWidth: 2, tension: 0.4, yAxisID: 'y', spanGaps: true
         });
       });
-
-      // Process secondary scale PIDs (dashed lines)
       pidGroups.secondary.forEach(({ pid, idx }) => {
-        let points = windowData.map(row => row?.[pid]);
-        
-        if (points.length > 200) {
-          points = sampleData(points, 200);
-          samplingFlag = true;
-        }
-
         datasets.push({
-          label: pid,
-          data: points,
-          borderColor: chartColors[idx] || '#38BDF8',
-          backgroundColor: chartColors[idx] || '#38BDF8',
-          pointRadius: 0,
-          borderWidth: 2,
-          borderDash: [5, 5], // Dashed line for secondary scale
-          tension: 0.4,
-          yAxisID: 'y1'
+          label: pid, data: windowData.map(r => r?.[pid]),
+          borderColor: chartColors[idx] || '#38BDF8', backgroundColor: chartColors[idx] || '#38BDF8',
+          pointRadius: 0, borderWidth: 2, borderDash: [5, 5], tension: 0.4, yAxisID: 'y1', spanGaps: true
         });
       });
     }
+    return { chartData: { labels: timeLabels, datasets }, useSecondaryScale: hasSecondaryScale };
+  }, [windowData, bufferData, selectedPIDs, chartColors, timeLabels, mode, logs, visibleRange]);
 
-    return {
-      chartData: {
-        labels: timeLabels,
-        datasets
-      },
-      samplingActive: samplingFlag,
-      useSecondaryScale: hasSecondaryScale
-    };
-  }, [windowData, selectedPIDs, chartColors, timeLabels, mode, logs, visibleRange]);
-
-  // Chart options with dynamic scaling
   const chartOptions = useMemo(() => {
-    let primaryValues = [];
-    let secondaryValues = [];
-
-    if (mode === 'comparison') {
-       const targetPID = selectedPIDs.find(p => p && p !== 'none');
-       if (targetPID) {
-         primaryValues = logs.flatMap(l => {
-            // Get data for this log in the visible window
-            const d = l.data || [];
-            const min = Math.max(0, visibleRange?.min ?? 0);
-            const max = Math.min((d.length - 1), visibleRange?.max ?? 0);
-            if (max < min) return [];
-            return d.slice(min, max + 1).map(r => r?.[targetPID]).filter(v => typeof v === 'number');
-         });
-       }
-    } else {
-        // Single mode logic (existing)
-        primaryValues = selectedPIDs
-          .filter((pid, idx) => {
-            if (!pid || pid === 'none') return false;
-            const pidGroups = groupPIDsByScale(selectedPIDs, windowData);
-            return pidGroups.primary.some(p => p.pid === pid);
-          })
-          .flatMap(pid => windowData.map(r => r?.[pid]).filter(v => typeof v === 'number'));
-
-        secondaryValues = selectedPIDs
-          .filter((pid, idx) => {
-            if (!pid || pid === 'none') return false;
-            const pidGroups = groupPIDsByScale(selectedPIDs, windowData);
-            return pidGroups.secondary.some(p => p.pid === pid);
-          })
-          .flatMap(pid => windowData.map(r => r?.[pid]).filter(v => typeof v === 'number'));
-    }
-
-    const scales = {
-      x: { 
-        ticks: { color: '#9CA3AF' },
-        title: {
-          display: true,
-          text: 'Elapsed Time',
-          color: '#9CA3AF'
-        }
-      },
-      y: {
-        type: needsLogScale(primaryValues) ? 'logarithmic' : 'linear',
-        position: 'left',
-        ticks: { color: '#9CA3AF' },
-        title: {
-          display: true,
-          text: 'Primary Scale',
-          color: '#9CA3AF'
-        }
-      }
-    };
-
-    if (useSecondaryScale && mode !== 'comparison') {
-      scales.y1 = {
-        type: needsLogScale(secondaryValues) ? 'logarithmic' : 'linear',
-        position: 'right',
-        ticks: { color: '#9CA3AF' },
-        title: {
-          display: true,
-          text: 'Secondary Scale',
-          color: '#9CA3AF'
-        },
-        grid: {
-          drawOnChartArea: false
-        }
-      };
-    }
+    const pidGroups = groupPIDsByScale(selectedPIDs, bufferData);
+    const primary = pidGroups.primary.flatMap(({ pid }) => bufferData.map(r => (pid === 'engine_rpm') ? scaleRPM(r?.[pid]) : r?.[pid])).filter(v => typeof v === 'number');
+    const secondary = pidGroups.secondary.flatMap(({ pid }) => bufferData.map(r => r?.[pid])).filter(v => typeof v === 'number');
 
     return {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      interaction: {
-        intersect: false,
-        mode: 'index'
-      },
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 500 }, interaction: { intersect: false, mode: 'index' },
       plugins: {
-        legend: { 
-          display: true,
-          labels: { color: '#9CA3AF' }
-        },
-        zoom: {
-          pan: {
-            enabled: true,
-            mode: 'x',
-            onPan: ({ chart }) => {
-              const xScale = chart.scales.x;
-              const visibleMin = Math.floor(xScale.min);
-              const visibleMax = Math.ceil(xScale.max);
-              
-              // Update visible range and notify parent
-              const newRange = {
-                min: Math.max(0, visibleMin + (visibleRange?.min ?? 0)),
-                max: Math.min(dataRef.length - 1, visibleMax + (visibleRange?.min ?? 0))
-              };
-              
-              setVisibleRange(newRange);
-              onChartZoom?.(newRange);
-              setIsZoomed(true);
-            }
-          },
-          zoom: {
-            wheel: { enabled: true },
-            pinch: { enabled: true },
-            mode: 'x',
-            onZoom: ({ chart }) => {
-              const xScale = chart.scales.x;
-              const visibleMin = Math.floor(xScale.min);
-              const visibleMax = Math.ceil(xScale.max);
-              
-              // Update visible range and notify parent
-              const newRange = {
-                min: Math.max(0, visibleMin + (visibleRange?.min ?? 0)),
-                max: Math.min(dataRef.length - 1, visibleMax + (visibleRange?.min ?? 0))
-              };
-              
-              setVisibleRange(newRange);
-              onChartZoom?.(newRange);
-              setIsZoomed(true);
-            }
-          }
-        },
-        tooltip: {
-          callbacks: {
-            title: function(tooltipItems) {
-              return `Time: ${tooltipItems[0]?.label || ''}`;
+        legend: { display: true, labels: { color: '#9CA3AF' } },
+        tooltip: { callbacks: { title: (items) => `Time: ${items[0]?.label || ''}` } },
+        annotation: {
+          annotations: {
+            line1: {
+              type: 'line',
+              xMin: Math.max(0, currentFrame - (visibleRange?.min || 0)),
+              xMax: Math.max(0, currentFrame - (visibleRange?.min || 0)),
+              borderColor: 'rgba(34, 211, 238, 0.8)',
+              borderWidth: 2,
+              display: isPlaying,
+              label: { content: 'NOW', display: true, position: 'start', backgroundColor: '#22d3ee', color: '#000', font: { size: 10, weight: 'bold' } }
             }
           }
         }
       },
-      scales
-    };
-  }, [windowData, selectedPIDs, useSecondaryScale, visibleRange, dataRef.length, setVisibleRange, onChartZoom, mode, logs, chartColors]);
-
-  // Handle zoom buttons
-  const handleZoom = useCallback((minutes) => {
-    if (minutes === 'reset') {
-      const fullRange = { min: 0, max: dataRef.length - 1 };
-      setVisibleRange(fullRange);
-      onChartZoom?.(fullRange);
-      setIsZoomed(false);
-      
-      // Reset chart zoom
-      if (chartRef.current) {
-        chartRef.current.resetZoom();
+      scales: {
+        x: { ticks: { color: '#9CA3AF' }, title: { display: true, text: 'Elapsed Time', color: '#9CA3AF' } },
+        y: { type: needsLogScale(primary) ? 'logarithmic' : 'linear', position: 'left', ticks: { color: '#9CA3AF' }, title: { display: true, text: 'Primary Scale', color: '#9CA3AF' } },
+        ...(useSecondaryScale && mode !== 'comparison' ? {
+          y1: { type: needsLogScale(secondary) ? 'logarithmic' : 'linear', position: 'right', ticks: { color: '#9CA3AF' }, title: { display: true, text: 'Secondary Scale', color: '#9CA3AF' }, grid: { drawOnChartArea: false } }
+        } : {})
       }
-      return;
+    };
+  }, [windowData, bufferData, selectedPIDs, useSecondaryScale, visibleRange, currentFrame, isPlaying]);
+
+  const handleMouseDown = (e) => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const points = chart.getElementsAtEventForMode(e.nativeEvent, 'index', { intersect: false }, true);
+    if (points.length > 0) {
+      const idx = points[0].index + visibleRange.min;
+      setIsSelecting(true); setSelectionStart(idx); setSelectionEnd(idx);
     }
-    
-    const range = getDefaultVisibleRange(dataRef, minutes * 60);
-    setVisibleRange(range);
-    onChartZoom?.(range);
-    setIsZoomed(true);
-  }, [dataRef, setVisibleRange, onChartZoom]);
+  };
 
-  // Handle pan buttons
-  const handlePan = useCallback((direction) => {
-    const totalLength = dataRef.length;
-    const size = (visibleRange?.max ?? 0) - (visibleRange?.min ?? 0);
-    const shift = Math.floor(size / 4); // Smaller shift for smoother panning
-    
-    let min = visibleRange?.min ?? 0;
-    if (direction === 'left') {
-      min = Math.max(0, min - shift);
-    } else if (direction === 'right') {
-      min = Math.min(totalLength - size, min + shift);
+  const handleMouseMove = (e) => {
+    if (!isSelecting) return;
+    const chart = chartRef.current;
+    if (!chart) return;
+    const points = chart.getElementsAtEventForMode(e.nativeEvent, 'index', { intersect: false }, true);
+    if (points.length > 0) setSelectionEnd(points[0].index + visibleRange.min);
+  };
+
+  const handleMouseUp = () => {
+    if (!isSelecting) return;
+    setIsSelecting(false);
+    if (selectionStart !== null && selectionEnd !== null && selectionStart !== selectionEnd) {
+      setVisibleRange({ min: Math.min(selectionStart, selectionEnd), max: Math.max(selectionStart, selectionEnd) });
     }
-    
-    const newRange = { min, max: min + size };
-    setVisibleRange(newRange);
-    onChartZoom?.(newRange);
-  }, [dataRef.length, visibleRange, setVisibleRange, onChartZoom]);
-
-  // Calculate scroll bar dimensions
-  const { scrollWidthPercent, scrollLeftPercent } = useMemo(() => {
-    const total = dataRef.length;
-    const size = (visibleRange?.max ?? 0) - (visibleRange?.min ?? 0);
-    const widthPct = total > 0 ? Math.max((size / total) * 100, 2) : 100;
-    const leftPct = total > 0 ? ((visibleRange?.min ?? 0) / total) * 100 : 0;
-    return { scrollWidthPercent: widthPct, scrollLeftPercent: leftPct };
-  }, [dataRef.length, visibleRange]);
-
-  // Handle PID changes while preserving colors
-  const handlePIDChange = useCallback((index, value) => {
-    onPIDChange(index, value);
-  }, [onPIDChange]);
-
-  const isFullyZoomedOut = (visibleRange?.min ?? 0) === 0 && (visibleRange?.max ?? 0) === dataRef.length - 1;
+    setSelectionStart(null); setSelectionEnd(null);
+  };
 
   return (
     <div className="bg-gray-800 rounded-lg shadow-xl p-4 space-y-3">
-      {/* PID Selectors */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         {selectedPIDs.map((pid, index) => (
-          <PIDSelector
-            key={index}
-            color={chartColors[index] || '#38BDF8'}
-            options={colsRef}
-            selectedValue={pid}
-            onChange={(value) => handlePIDChange(index, value)}
-          />
+          <PIDSelector key={index} color={chartColors[index] || '#38BDF8'} options={colsRef} selectedValue={pid} onChange={(val) => onPIDChange(index, val)} />
         ))}
       </div>
-
-      {/* Sampling Indicator */}
-      <SamplingIndicator active={samplingActive && !isZoomed} />
-
-      {/* Zoom Controls */}
-      <div className="flex space-x-2 text-sm">
-        <button 
-          onClick={() => handleZoom(2)} 
-          className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 transition-colors"
-        >
-          2min
-        </button>
-        <button 
-          onClick={() => handleZoom(5)} 
-          className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 transition-colors"
-        >
-          5min
-        </button>
-        <button 
-          onClick={() => handleZoom(10)} 
-          className="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 transition-colors"
-        >
-          10min
-        </button>
-        <button 
-          onClick={() => handleZoom('reset')} 
-          disabled={isFullyZoomedOut}
-          className={`px-3 py-1 rounded transition-colors ${
-            isFullyZoomedOut 
-              ? 'bg-gray-600 text-gray-500 cursor-not-allowed' 
-              : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-          }`}
-        >
-          Reset
-        </button>
+      <div className="h-[56vh] cursor-crosshair relative" onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
+        <Line key={key} ref={chartRef} options={chartOptions} data={chartData} />
+        {isSelecting && selectionStart !== null && selectionEnd !== null && (
+          <div className="absolute top-0 bottom-0 bg-cyan-500/20 border-x border-cyan-400 pointer-events-none z-10 flex items-center justify-center">
+            <span className="bg-gray-900 text-cyan-400 text-xs px-2 py-1 rounded shadow-lg border border-cyan-500/50">
+              {Math.abs(selectionEnd - selectionStart)} frames
+            </span>
+          </div>
+        )}
       </div>
-
-      {/* Chart */}
-      <div className="h-[56vh]">
-        <Line ref={chartRef} options={chartOptions} data={chartData} />
-      </div>
-
-      {/* Pan Controls and Scroll Bar */}
-      <div className="flex items-center space-x-2">
-        <button
-          onClick={() => handlePan('left')}
-          disabled={(visibleRange?.min ?? 0) <= 0}
-          className={`px-3 py-1 rounded transition-colors ${
-            (visibleRange?.min ?? 0) <= 0
-              ? 'bg-gray-600 text-gray-500 cursor-not-allowed'
-              : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-          }`}
-        >
-          ←
-        </button>
-
-        <div className="flex-1 h-3 bg-gray-600 rounded relative overflow-hidden cursor-pointer">
-          <div
-            className="absolute top-0 h-3 bg-blue-400 rounded transition-all duration-200"
-            style={{
-              width: `${scrollWidthPercent}%`,
-              left: `${scrollLeftPercent}%`
-            }}
-          />
-        </div>
-
-        <button
-          onClick={() => handlePan('right')}
-          disabled={(visibleRange?.max ?? 0) >= dataRef.length - 1}
-          className={`px-3 py-1 rounded transition-colors ${
-            (visibleRange?.max ?? 0) >= dataRef.length - 1
-              ? 'bg-gray-600 text-gray-500 cursor-not-allowed'
-              : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-          }`}
-        >
-          →
-        </button>
-      </div>
-
-      {/* Scale Legend */}
-      {useSecondaryScale && (
-        <div className="text-xs text-gray-400 text-center">
-          Solid lines: Left scale | Dashed lines: Right scale
-        </div>
-      )}
+      <div className="text-xs text-gray-500 italic text-center">Click and drag on chart to select a time window</div>
     </div>
   );
 }

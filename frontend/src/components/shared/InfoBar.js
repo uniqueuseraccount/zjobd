@@ -17,9 +17,15 @@ function formatDuration(seconds) {
 function formatTimestamp(ts) {
   if (!ts) return 'Unknown';
   
-  // Handle different timestamp formats
+  // Handle ISO strings and other string formats
   if (typeof ts === 'string') {
     const date = new Date(ts);
+    // Fallback if the string is just a number in string form
+    if (isNaN(date.getTime()) && !isNaN(parseFloat(ts))) {
+      const numTs = parseFloat(ts);
+      const fallbackDate = new Date(numTs < 1e12 ? numTs * 1000 : numTs);
+      return isNaN(fallbackDate.getTime()) ? 'Unknown' : fallbackDate.toLocaleString();
+    }
     return isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString();
   }
   
@@ -65,6 +71,9 @@ export default function InfoBar({ tripInfo, groupLogs, logData }) {
   const groupId = tripInfo?.trip_group_id;
   const hasGroup = groupCount >= 2 && groupId;
 
+  // Check if we are already on the trip group detail page to avoid redundant links
+  const isGroupDetailPage = window.location.pathname.includes('/trip-groups/');
+
   return (
     <div className="bg-gray-700 text-gray-100 text-sm px-4 py-3 rounded-lg mb-4 flex justify-between items-center">
       <div className="flex flex-wrap items-center gap-6">
@@ -82,20 +91,22 @@ export default function InfoBar({ tripInfo, groupLogs, logData }) {
           <span className="text-gray-500">Data points:</span> {formattedRowCount}
         </span>
       </div>
-      
+
       <div className="flex items-center">
-        {hasGroup ? (
-          <Link 
-            to={`/trip-groups/${groupId}`} 
+        {hasGroup && !isGroupDetailPage ? (
+          <Link
+            to={`/trip-groups/${groupId}`}
             className="text-blue-400 hover:text-blue-300 hover:underline transition-colors flex items-center gap-1"
           >
             <span>Part of group ({groupCount} trips)</span>
             <span>→</span>
           </Link>
         ) : (
-          <span className="text-gray-500">No trip group</span>
+          <span className="text-gray-500">
+            {isGroupDetailPage ? `Group Hash: ${groupId.substring(0, 8)}...` : 'No trip group'}
+          </span>
         )}
       </div>
     </div>
   );
-}
+  }
