@@ -22,6 +22,8 @@ try:
 	from api.groups import groups_bp
 	from api.map import map_bp
 	from api.maintenance import maintenance_bp
+	from services.fit_scoring_service import FitScoringService
+	from utils.gpx_exporter import generate_gpx
 except ImportError as e:
 	print(f"FATAL: A required file or module could not be imported: {e}", file=sys.stderr)
 	sys.exit(1)
@@ -132,11 +134,58 @@ def get_logs():
 def get_log_data(log_id):
 	db_manager = DatabaseManager(DB_CONFIG)
 	try:
+		# Log the request for auditing
+		app.logger.info(f"API_REQUEST: Fetching log data for log_id {log_id}")
+		
 		log_data, columns, statistics, _ = db_manager.get_data_for_log(log_id)
-		trip_info = db_manager.fetch_one("SELECT file_name, trip_group_id, distance_miles, trip_duration_seconds FROM log_index li LEFT JOIN trips t ON li.log_id = t.log_id WHERE li.log_id = %s", (log_id,))
+		
+		# Better trip_info query including start_time from log_index
+		query = """
+			SELECT 
+				li.file_name, 
+				li.start_time, 
+				li.trip_duration_seconds as duration_seconds,
+				t.trip_group_id, 
+				t.distance_miles
+			FROM log_index li 
+			LEFT JOIN trips t ON li.log_id = t.log_id 
+			WHERE li.log_id = %s
+		"""
+		trip_info = db_manager.fetch_one(query, (log_id,))
+		
+		# Fallback: if distance_miles is None/0, check log_data for 'trip_distance' PIDs
+		if not trip_info or not trip_info.get('distance_miles'):
+			# Find if there's a column like 'trip_distance' in the log_data
+			# We'll check column_definitions first to see which sanitized name to use
+			distance_col_res = db_manager.fetch_one("""
+				SELECT sanitized_name 
+				FROM column_definitions 
+				WHERE column_name LIKE 'trip_distance%' OR sanitized_name LIKE 'trip_distance%'
+				LIMIT 1
+			""")
+			
+			if distance_col_res:
+				sanitized_dist_col = distance_col_res['sanitized_name']
+				# Get the maximum value for this log
+				dist_query = f"SELECT MAX(`{sanitized_dist_col}`) as max_dist FROM log_data WHERE log_id = %s"
+				dist_val_res = db_manager.fetch_one(dist_query, (log_id,))
+				if dist_val_res and dist_val_res['max_dist']:
+					if not trip_info:
+						trip_info = {'distance_miles': dist_val_res['max_dist']}
+					else:
+						trip_info['distance_miles'] = dist_val_res['max_dist']
+
+		# Ensure we have at least basic info from log_index
+		if trip_info and trip_info.get('start_time'):
+			# Convert datetime to ISO format for better JS parsing
+			if hasattr(trip_info['start_time'], 'isoformat'):
+				trip_info['start_time'] = trip_info['start_time'].isoformat()
+		
 		group_logs = []
 		if trip_info and trip_info.get('trip_group_id'):
 			group_logs = db_manager.get_logs_for_trip_group(trip_info['trip_group_id'])
+
+		app.logger.info(f"API_SUCCESS: Returned {len(log_data)} rows for log_id {log_id}. Distance: {trip_info.get('distance_miles') if trip_info else 'N/A'}")
 
 		return jsonify({
 			"data": log_data, 
@@ -146,7 +195,7 @@ def get_log_data(log_id):
 			"group_logs": group_logs
 		})
 	except Exception as e:
-		app.logger.error(f"Error fetching data for log_id {log_id}: {e}", exc_info=True)
+		app.logger.error(f"API_ERROR: Error fetching data for log_id {log_id}: {e}", exc_info=True)
 		return jsonify({"error": "Could not fetch log data"}), 500
 	finally:
 		db_manager.close()
@@ -219,6 +268,45 @@ def apply_grouping():
 	except Exception as e:
 		app.logger.error(f"Error applying trip grouping: {e}", exc_info=True)
 		return jsonify({"error": "Failed to apply grouping."}), 500
+
+@app.route('/api/logs/<int:log_id>/comparable', methods=['GET'])
+def get_comparable_logs(log_id):
+	db_manager = DatabaseManager(DB_CONFIG)
+	try:
+		scorer = FitScoringService(db_manager)
+		matches = scorer.find_best_matches(log_id)
+		return jsonify(matches)
+	except Exception as e:
+		app.logger.error(f"Error finding comparable logs for {log_id}: {e}", exc_info=True)
+		return jsonify({"error": "Failed to find comparable logs"}), 500
+	finally:
+		db_manager.close()
+
+@app.route('/api/logs/<int:log_id>/export/gpx', methods=['GET'])
+def export_log_gpx(log_id):
+	db_manager = DatabaseManager(DB_CONFIG)
+	try:
+		# Fetch the full data rows for this log
+		data, _, _, _ = db_manager.get_data_for_log(log_id)
+		log_info = db_manager.fetch_one("SELECT file_name FROM log_index WHERE log_id = %s", (log_id,))
+		
+		if not data or not log_info:
+			return jsonify({"error": "Log not found or empty"}), 404
+			
+		gpx_xml = generate_gpx(log_id, log_info['file_name'], data)
+		
+		# Return as a downloadable file
+		from flask import Response
+		return Response(
+			gpx_xml,
+			mimetype='application/gpx+xml',
+			headers={"Content-Disposition": f"attachment;filename=log_{log_id}.gpx"}
+		)
+	except Exception as e:
+		app.logger.error(f"Error exporting GPX for log {log_id}: {e}", exc_info=True)
+		return jsonify({"error": "Export failed"}), 500
+	finally:
+		db_manager.close()
 
 if __name__ == '__main__':
 	# Initialize logging immediately on startup

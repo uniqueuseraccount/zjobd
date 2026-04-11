@@ -95,10 +95,8 @@ class DatabaseManager:
             data_id BIGINT AUTO_INCREMENT PRIMARY KEY,
             log_id INT NOT NULL,
             row_time DATETIME(6) NOT NULL,
-            operating_state VARCHAR(50),
             INDEX (log_id),
             INDEX idx_row_time (row_time),
-            INDEX idx_operating_state (operating_state),
             FOREIGN KEY (log_id) REFERENCES log_index(log_id) ON DELETE CASCADE
         ) ENGINE=InnoDB;
         """
@@ -117,7 +115,6 @@ class DatabaseManager:
             data_id BIGINT AUTO_INCREMENT PRIMARY KEY,
             log_id INT NOT NULL,
             row_time DATETIME(6) NOT NULL,
-            operating_state VARCHAR(50),
             INDEX (log_id),
             INDEX idx_row_time (row_time),
             FOREIGN KEY (log_id) REFERENCES log_index(log_id) ON DELETE CASCADE
@@ -237,14 +234,13 @@ class DatabaseManager:
         stats = {}
         for pid in sanitized_pids:
             query = f"""
-                SELECT operating_state, AVG(`{pid}`) as mean, STDDEV(`{pid}`) as std_dev
-                FROM log_data WHERE operating_state IS NOT NULL AND `{pid}` IS NOT NULL
-                GROUP BY operating_state
+                SELECT AVG(`{pid}`) as mean, STDDEV(`{pid}`) as std_dev
+                FROM log_data WHERE `{pid}` IS NOT NULL
             """
             try:
-                results = self.fetch_all(query)
-                pid_stats = {row['operating_state']: {'mean': row['mean'], 'std_dev': row['std_dev']} for row in results}
-                stats[pid] = pid_stats
+                row = self.fetch_one(query)
+                if row:
+                    stats[pid] = {'mean': row['mean'], 'std_dev': row['std_dev']}
             except Error as e:
                 logging.error(f"Could not calculate statistics for PID '{pid}': {e}")
         return stats
@@ -310,11 +306,11 @@ class DatabaseManager:
         sanitized_headers = list(col_map.values())
         cols_str = ", ".join([f"`{h}`" for h in sanitized_headers])
         placeholders = ", ".join(["%s"] * len(sanitized_headers))
-        query = f"INSERT INTO {table_name} (log_id, row_time, operating_state, {cols_str}) VALUES (%s, %s, %s, {placeholders})"
+        query = f"INSERT INTO {table_name} (log_id, row_time, {cols_str}) VALUES (%s, %s, {placeholders})"
         
         insert_tuples = []
         for row in data_rows:
-            data_tuple = [log_id, row['row_time'], row['operating_state']]
+            data_tuple = [log_id, row['row_time']]
             for header in col_map.keys():
                 data_tuple.append(row.get(header, None))
             insert_tuples.append(tuple(data_tuple))
@@ -366,9 +362,9 @@ class DatabaseManager:
         statistics = self.get_pid_statistics(sanitized_names)
         cols_for_select = ", ".join([f"`{name}`" for name in sanitized_names])
         # Include timestamp in milliseconds for frontend compatibility
-        data_query = f"SELECT data_id, row_time, (UNIX_TIMESTAMP(row_time) * 1000 + MICROSECOND(row_time) / 1000) as timestamp, operating_state, {cols_for_select} FROM log_data WHERE log_id = %s ORDER BY row_time ASC"
+        data_query = f"SELECT data_id, row_time, (UNIX_TIMESTAMP(row_time) * 1000 + MICROSECOND(row_time) / 1000) as timestamp, {cols_for_select} FROM log_data WHERE log_id = %s ORDER BY row_time ASC"
         data_rows = self.fetch_all(data_query, (log_id,))
-        return data_rows, ['data_id', 'row_time', 'timestamp', 'operating_state'] + sanitized_names, statistics, normalized_names
+        return data_rows, ['data_id', 'row_time', 'timestamp'] + sanitized_names, statistics, normalized_names
 
     def get_all_trip_groups(self):
         query = "SELECT trip_group_id, COUNT(trip_id) as trip_count, AVG(start_lat) as avg_start_lat, AVG(start_lon) as avg_start_lon, AVG(end_lat) as avg_end_lat, AVG(end_lon) as avg_end_lon FROM trips WHERE trip_group_id IS NOT NULL GROUP BY trip_group_id HAVING trip_count > 1 ORDER BY trip_count DESC;"
@@ -547,3 +543,14 @@ class DatabaseManager:
     def remove_from_blacklist(self, column_name):
         logging.info(f"MAINTENANCE: Removing '{column_name}' from blacklist.")
         return self.execute_query("DELETE FROM column_blacklist WHERE column_name = %s", (column_name,))
+
+    def get_all_waypoints(self):
+        """Returns all waypoints for maintenance/naming."""
+        query = "SELECT * FROM waypoints ORDER BY waypoint_id"
+        return self.fetch_all(query)
+
+    def update_waypoint_name(self, waypoint_id, name):
+        """Updates the human-readable name for a waypoint."""
+        logging.info(f"MAINTENANCE: Updating waypoint {waypoint_id} name to '{name}'")
+        query = "UPDATE waypoints SET name = %s WHERE waypoint_id = %s"
+        return self.execute_query(query, (name, waypoint_id))

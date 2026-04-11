@@ -114,7 +114,33 @@ def parse_start_timestamp(file_path):
                     # Only stop searching if it looks like the actual CSV header (contains a comma)
                     # This allows us to skip non-commented instructions/notes at the top.
                     if ',' in line:
-                        logging.info(f"  INFO: Reached CSV header line without finding comment timestamp. Trying filename fallback.")
+                        logging.info(f"  INFO: Reached CSV header line. Checking first data row for timestamp before fallback.")
+                        
+                        # Try to read the NEXT line for a timestamp
+                        try:
+                            next_line = next(f, None)
+                            if next_line:
+                                first_col = next_line.split(',')[0].strip()
+                                logging.info(f"  > Checking first data row, first column: '{first_col}'")
+                                
+                                data_formats = [
+                                    "%m/%d/%Y %I:%M:%S.%f %p",
+                                    "%m/%d/%Y %I:%M:%S %p",
+                                    "%Y-%m-%d %H:%M:%S",
+                                ]
+                                
+                                for fmt in data_formats:
+                                    try:
+                                        local_dt = datetime.strptime(first_col, fmt)
+                                        cst_dt = cst.localize(local_dt)
+                                        logging.info(f"  SUCCESS: Extracted start time from first data row: {cst_dt}")
+                                        return cst_dt
+                                    except ValueError:
+                                        continue
+                        except Exception as e:
+                            logging.warning(f"  > Failed to peek at first data row: {e}")
+                        
+                        logging.info(f"  INFO: No timestamp in first data row. Trying filename fallback.")
                         break
     except Exception as e:
         logging.error(f"  ERROR: An exception occurred while reading {file_path}: {e}")

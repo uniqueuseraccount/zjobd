@@ -11,7 +11,6 @@ import logging
 import json
 import re
 from .utils import parse_start_timestamp, infer_mysql_type
-from .state_detector import classify_operating_states
 
 def find_header_row(file_path):
     with open(file_path, 'r', encoding='utf-8-sig', errors='ignore') as f:
@@ -96,7 +95,7 @@ def process_log_file(file_path, db_manager):
 
     if start_timestamp is None: return False, "error"
 
-    data_rows = classify_operating_states(data_rows, headers)
+    # data_rows = classify_operating_states(data_rows, headers)
 
     defined_columns = db_manager.get_all_defined_columns()
     blacklist = db_manager.get_blacklist()
