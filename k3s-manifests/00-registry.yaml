@@ -1,0 +1,54 @@
+# --- VERSION 1.0.0 ---
+# - Internal Private Registry for ZJOBD
+# - Allows image deployment without Docker Hub
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: registry-pvc
+  namespace: zjobd
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: nfs-client
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+  namespace: zjobd
+spec:
+  ports:
+    - port: 5000
+      targetPort: 5000
+  selector:
+    app: registry
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  namespace: zjobd
+spec:
+  selector:
+    matchLabels:
+      app: registry
+  template:
+    metadata:
+      labels:
+        app: registry
+    spec:
+      containers:
+        - name: registry
+          image: registry:2
+          ports:
+            - containerPort: 5000
+          volumeMounts:
+            - name: registry-data
+              mountPath: /var/lib/registry
+      volumes:
+        - name: registry-data
+          persistentVolumeClaim:
+            claimName: registry-pvc

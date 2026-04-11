@@ -1,13 +1,13 @@
 ## application specific personal or sensitive files ##
-logs/*
-backend/config/db_credentials.py
-program_logs/*
-.vscode/*
+#logs/*
+#backend/config/db_credentials.py
+#program_logs/*
+#.vscode/*
 
 # archives #
-archive/*
+#archive/*
 # backend/archive/*
-frontend/archive/*
+#frontend/archive/*
 
 # md files for ai interaction #
 ai-md/*
@@ -39,18 +39,18 @@ Temporary Items
 
 # node stuff #
 # application specific #
-frontend/coverage
-frontend/build
-frontend/node_modules
-frontend/jspm_packages
-frontend/.pnp
+#frontend/coverage
+#frontend/build
+#frontend/node_modules
+#frontend/jspm_packages
+#frontend/.pnp
 
 
 # NPM Logs#
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
+#npm-debug.log*
+#yarn-debug.log*
+#yarn-error.log*
+#lerna-debug.log*
 .pnpm-debug.log*
 
 # dotenv environment variable files
@@ -139,3 +139,13 @@ venv/[Ss]cripts
 pyvenv.cfg
 pip-selfcheck.json
 
+
+.gemini/
+gha-creds-*.json
+
+# metaswarm
+.metaswarm/
+.beads/
+.claude/
+program_logs/
+*.log

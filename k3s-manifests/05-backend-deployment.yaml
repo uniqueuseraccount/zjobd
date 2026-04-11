@@ -1,0 +1,80 @@
+# --- VERSION 1.2.0 ---
+# - Backend Deployment for ZJOBD
+# - Uses internal cluster registry
+# - Multi-arch affinity for mixed cluster support
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: logs-pvc
+  namespace: zjobd
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: nfs-client
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: zjobd
+spec:
+  ports:
+    - port: 5001
+      targetPort: 5001
+  selector:
+    app: backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: zjobd
+spec:
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values: [amd64, arm64]
+      containers:
+        - name: backend
+          image: registry.zjobd.svc.cluster.local:5000/zjobd-backend:latest
+          env:
+            - name: DB_HOST
+              value: "mysql"
+            - name: DB_USER
+              value: "root"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-secrets
+                  key: root-password
+          ports:
+            - containerPort: 5001
+          volumeMounts:
+            - name: logs-storage
+              mountPath: /app/logs
+            - name: program-logs-storage
+              mountPath: /app/program_logs
+              subPath: program_logs
+      volumes:
+        - name: logs-storage
+          persistentVolumeClaim:
+            claimName: logs-pvc
+        - name: program-logs-storage
+          persistentVolumeClaim:
+            claimName: logs-pvc

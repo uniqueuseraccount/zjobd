@@ -1,0 +1,70 @@
+# --- VERSION 1.1.0 ---
+# - Frontend Deployment for ZJOBD
+# - Uses internal cluster registry
+# - Multi-arch affinity for mixed cluster support
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: zjobd
+spec:
+  ports:
+    - port: 80
+      targetPort: 80
+  selector:
+    app: frontend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: zjobd
+spec:
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values: [amd64, arm64]
+      containers:
+        - name: frontend
+          image: registry.zjobd.svc.cluster.local:5000/zjobd-frontend:latest
+          ports:
+            - containerPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zjobd-ingress
+  namespace: zjobd
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 5001
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
