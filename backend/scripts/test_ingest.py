@@ -30,7 +30,12 @@ def test_ingest(file_path):
     # 1. Parse Timestamp
     ts = parse_start_timestamp(file_path)
     if ts:
-        print(f"TIMESTAMP: OK ({ts}) -> {datetime.fromtimestamp(ts)}")
+        dt_val = ts
+        if hasattr(ts, 'timestamp'):
+            ts_float = ts.timestamp()
+        else:
+            ts_float = float(ts)
+        print(f"TIMESTAMP: OK ({ts}) -> {datetime.fromtimestamp(ts_float)}")
     else:
         print("TIMESTAMP: FAIL")
 

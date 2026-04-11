@@ -169,3 +169,26 @@ def remove_from_blacklist():
         return jsonify({"success": success})
     finally:
         db.close()
+
+@maintenance_bp.route('/api/maintenance/waypoints', methods=['GET'])
+def get_waypoints():
+    db = DatabaseManager(DB_CONFIG)
+    try:
+        waypoints = db.get_all_waypoints()
+        return jsonify(waypoints)
+    finally:
+        db.close()
+
+@maintenance_bp.route('/api/maintenance/waypoints/<int:waypoint_id>/name', methods=['POST'])
+def update_waypoint_name(waypoint_id):
+    data = request.get_json()
+    name = data.get('name')
+    m_logger = get_maintenance_logger()
+    m_logger.info(f"WAYPOINT_NAME: Updating waypoint {waypoint_id} to '{name}'")
+    
+    db = DatabaseManager(DB_CONFIG)
+    try:
+        success = db.update_waypoint_name(waypoint_id, name)
+        return jsonify({"success": success})
+    finally:
+        db.close()

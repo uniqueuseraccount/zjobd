@@ -28,6 +28,7 @@ def get_map_heatmap():
                 geo = json.loads(row['geometry'])
                 results.append({
                     "id": row['segment_id'],
+                    "log_id": row['log_id'],
                     "name": row['osm_name'],
                     "geometry": geo
                 })

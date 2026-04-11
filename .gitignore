@@ -1,13 +1,13 @@
 ## application specific personal or sensitive files ##
-#logs/*
-#backend/config/db_credentials.py
-#program_logs/*
-#.vscode/*
+logs/*
+backend/config/db_credentials.py
+program_logs/*
+.vscode/*
 
-# archives #
-#archive/*
-# backend/archive/*
-#frontend/archive/*
+ #archives #
+archive/*
+ backend/archive/*
+frontend/archive/*
 
 # md files for ai interaction #
 ai-md/*
